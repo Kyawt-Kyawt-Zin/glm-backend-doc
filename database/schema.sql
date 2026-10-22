@@ -39,3 +39,28 @@ CREATE TABLE products (
     ON UPDATE CASCADE
     ON DELETE RESTRICT
 );
+
+CREATE TABLE product_variants (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  product_id BIGINT UNSIGNED NOT NULL,
+  color VARCHAR(50) NOT NULL,
+  size VARCHAR(30) NOT NULL,
+  sku VARCHAR(100) NOT NULL UNIQUE,
+  price DECIMAL(10, 2) NOT NULL,
+  fulfillment_type ENUM('in_stock', 'preorder') NOT NULL,
+  stock_quantity INT UNSIGNED NOT NULL DEFAULT 0,
+  preorder_lead_days SMALLINT UNSIGNED,
+  deposit_percentage DECIMAL(5, 2) NOT NULL DEFAULT 20.00,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+  CONSTRAINT fk_product_variants_product
+    FOREIGN KEY (product_id)
+    REFERENCES products(id)
+    ON UPDATE CASCADE
+    ON DELETE RESTRICT,
+
+  CONSTRAINT uq_product_variant
+    UNIQUE (product_id, color, size)
+);
