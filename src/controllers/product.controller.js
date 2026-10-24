@@ -1,5 +1,6 @@
 import { Router } from "express";
 import * as productService from "../services/product.service.js";
+import * as productVariantService from "../services/product-variant.service.js";
 
 const router = Router();
 
@@ -17,6 +18,14 @@ router.post("/", async (req, res) => {
 
 router.get("/:id", async (req, res) => {
   const response = await productService.getProductById(req.params.id);
+
+  return res.status(response.code).json(response);
+});
+
+router.get("/:productId/variants", async (req, res) => {
+  const response = await productVariantService.getProductVariantsByProductId(
+    req.params.productId,
+  );
 
   return res.status(response.code).json(response);
 });
