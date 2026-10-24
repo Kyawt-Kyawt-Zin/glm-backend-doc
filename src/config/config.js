@@ -9,6 +9,9 @@ const config = {
     password: process.env.DB_PASSWORD,
     name: process.env.DB_NAME,
   },
+  auth: {
+    jwtSecret: process.env.JWT_SECRET,
+  },
 };
 
 export default config;

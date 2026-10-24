@@ -180,3 +180,35 @@ export const deactivate = async (id) => {
     }
   }
 };
+
+export const findForLogin = async (email) => {
+  let connection;
+
+  try {
+    connection = await pool.getConnection();
+
+    const [users] = await connection.query(
+      `SELECT
+        id,
+        full_name,
+        email,
+        password_hash,
+        phone,
+        role,
+        is_active
+      FROM users
+      WHERE email = ?
+      LIMIT 1`,
+      [email],
+    );
+
+    return users[0] || null;
+  } catch (error) {
+    console.error("findForLogin error:", error.message);
+    throw error;
+  } finally {
+    if (connection) {
+      connection.release();
+    }
+  }
+};

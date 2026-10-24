@@ -47,3 +47,12 @@ export const internalServerError = (message = "Internal Server Error") => {
     message,
   };
 };
+
+export const unauthorized = (message = "Unauthorized") => {
+  return {
+    status: "error",
+    code: 401,
+    message,
+    data: null,
+  };
+};
