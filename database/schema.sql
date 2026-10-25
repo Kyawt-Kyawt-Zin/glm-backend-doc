@@ -64,3 +64,42 @@ CREATE TABLE product_variants (
   CONSTRAINT uq_product_variant
     UNIQUE (product_id, color, size)
 );
+
+CREATE TABLE carts (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  user_id BIGINT UNSIGNED NOT NULL,
+  status ENUM('active', 'checked_out', 'abandoned') NOT NULL DEFAULT 'active',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+  CONSTRAINT fk_carts_user
+    FOREIGN KEY (user_id)
+    REFERENCES users(id)
+    ON UPDATE CASCADE
+    ON DELETE RESTRICT,
+
+  INDEX idx_carts_user_status (user_id, status)
+);
+
+CREATE TABLE cart_items (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  cart_id BIGINT UNSIGNED NOT NULL,
+  product_variant_id BIGINT UNSIGNED NOT NULL,
+  quantity INT UNSIGNED NOT NULL DEFAULT 1,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+  CONSTRAINT fk_cart_items_cart
+    FOREIGN KEY (cart_id)
+    REFERENCES carts(id)
+    ON UPDATE CASCADE
+    ON DELETE RESTRICT,
+
+  CONSTRAINT fk_cart_items_product_variant
+    FOREIGN KEY (product_variant_id)
+    REFERENCES product_variants(id)
+    ON UPDATE CASCADE
+    ON DELETE RESTRICT,
+
+  UNIQUE KEY unique_cart_variant (cart_id, product_variant_id)
+);
