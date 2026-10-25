@@ -56,3 +56,14 @@ export const unauthorized = (message = "Unauthorized") => {
     data: null,
   };
 };
+
+export const forbidden = (
+  message = "You do not have permission for this action",
+) => {
+  return {
+    status: "error",
+    code: 403,
+    message,
+    data: null,
+  };
+};

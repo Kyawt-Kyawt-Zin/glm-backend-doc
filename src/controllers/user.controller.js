@@ -1,7 +1,11 @@
 import { Router } from "express";
 import * as userService from "../services/user.service.js";
+import { authenticate } from "../middlewares/auth.middleware.js";
+import { authorizeRoles } from "../middlewares/authorization.middleware.js";
 
 const router = Router();
+
+router.use(authenticate, authorizeRoles("admin"));
 
 router.get("/", async (req, res) => {
   const response = await userService.getAllUsers();
