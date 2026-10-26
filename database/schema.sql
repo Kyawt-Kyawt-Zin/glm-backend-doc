@@ -304,3 +304,16 @@ VALUES
     'cash_on_pickup',
     'bank_transfer'
   ) NOT NULL;
+
+  ALTER TABLE orders
+  MODIFY COLUMN status ENUM(
+    'pending',
+    'confirmed',
+    'processing',
+    'ready_for_delivery',
+    'out_for_delivery',
+    'ready_for_pickup',
+    'delivered',
+    'picked_up',
+    'cancelled'
+  ) NOT NULL DEFAULT 'pending';

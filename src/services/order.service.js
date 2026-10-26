@@ -486,3 +486,160 @@ export const getMyOrderById = async (userId, orderId) => {
     return Response.internalServerError("Unable to fetch order");
   }
 };
+
+export const getOrdersForManagement = async () => {
+  try {
+    const orders = await orderRepository.findAllForManagement();
+
+    return Response.success(
+      orders.map((order) => {
+        return {
+          ...order,
+          total_amount: Number(order.total_amount),
+          deposit_amount: Number(order.deposit_amount),
+        };
+      }),
+      "Orders fetched successfully",
+    );
+  } catch (error) {
+    console.error("getOrdersForManagement service error:", error.message);
+
+    return Response.internalServerError("Unable to fetch orders");
+  }
+};
+
+export const getOrderForManagement = async (orderId) => {
+  const numericOrderId = Number(orderId);
+
+  if (!isPositiveInteger(numericOrderId)) {
+    return Response.badRequest("Order ID must be a positive whole number");
+  }
+
+  try {
+    const order = await orderRepository.findByIdForManagement(numericOrderId);
+
+    if (!order) {
+      return Response.notFound("Order not found");
+    }
+
+    const [items, payments] = await Promise.all([
+      orderRepository.findItemsByOrderId(numericOrderId),
+      orderRepository.findPaymentsByOrderId(numericOrderId),
+    ]);
+
+    return Response.success(
+      {
+        order: formatOrderAmounts(order),
+        items: items.map((item) => {
+          return {
+            ...item,
+            unit_price: Number(item.unit_price),
+            line_total: Number(item.line_total),
+            deposit_percentage: Number(item.deposit_percentage),
+          };
+        }),
+        payments: payments.map((payment) => {
+          return {
+            ...payment,
+            amount: Number(payment.amount),
+          };
+        }),
+      },
+      "Order fetched successfully",
+    );
+  } catch (error) {
+    console.error("getOrderForManagement service error:", error.message);
+
+    return Response.internalServerError("Unable to fetch order");
+  }
+};
+
+const allowedStatusTransitions = {
+  pending: ["confirmed", "cancelled"],
+  confirmed: ["processing", "cancelled"],
+  processing: [
+    "ready_for_delivery",
+    "ready_for_pickup",
+    "cancelled",
+  ],
+  ready_for_delivery: ["out_for_delivery", "cancelled"],
+  out_for_delivery: ["delivered"],
+  ready_for_pickup: ["picked_up", "cancelled"],
+  delivered: [],
+  picked_up: [],
+  cancelled: [],
+};
+
+export const updateOrderStatusForManagement = async (
+  orderId,
+  { status },
+) => {
+  const numericOrderId = Number(orderId);
+  const nextStatus = String(status || "").trim();
+
+  if (!isPositiveInteger(numericOrderId) || !nextStatus) {
+    return Response.badRequest("Order ID and status are required");
+  }
+
+  try {
+    const order = await orderRepository.findByIdForManagement(numericOrderId);
+
+    if (!order) {
+      return Response.notFound("Order not found");
+    }
+
+    const allowedNextStatuses = allowedStatusTransitions[order.status] || [];
+
+    if (!allowedNextStatuses.includes(nextStatus)) {
+      return Response.badRequest(
+        `Order cannot move from ${order.status} to ${nextStatus}`,
+      );
+    }
+
+    if (
+      order.fulfillment_type === "preorder" &&
+      order.payment_status !== "deposit_confirmed" &&
+      nextStatus !== "cancelled"
+    ) {
+      return Response.badRequest(
+        "Preorder deposit must be confirmed before processing the order",
+      );
+    }
+
+    const isPickupOrder = order.delivery_method === "pickup";
+
+    if (
+      isPickupOrder &&
+      ["ready_for_delivery", "out_for_delivery", "delivered"].includes(
+        nextStatus,
+      )
+    ) {
+      return Response.badRequest(
+        "Pickup orders must use pickup status updates",
+      );
+    }
+
+    if (
+      !isPickupOrder &&
+      ["ready_for_pickup", "picked_up"].includes(nextStatus)
+    ) {
+      return Response.badRequest(
+        "Delivery orders must use delivery status updates",
+      );
+    }
+
+    await orderRepository.updateOrderStatus(numericOrderId, nextStatus);
+
+    return Response.success(
+      {
+        ...formatOrderAmounts(order),
+        status: nextStatus,
+      },
+      "Order status updated successfully",
+    );
+  } catch (error) {
+    console.error("updateOrderStatusForManagement service error:", error.message);
+
+    return Response.internalServerError("Unable to update order status");
+  }
+};

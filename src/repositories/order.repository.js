@@ -308,3 +308,80 @@ export const findPaymentsByOrderId = async (orderId) => {
 
   return payments;
 };
+
+export const findAllForManagement = async () => {
+  const [orders] = await pool.execute(
+    `SELECT
+      orders.id,
+      orders.order_number,
+      orders.user_id,
+      orders.fulfillment_type,
+      orders.status,
+      orders.payment_method,
+      orders.payment_status,
+      orders.delivery_method,
+      orders.delivery_zone_name,
+      orders.total_amount,
+      orders.deposit_amount,
+      orders.estimated_ready_date,
+      orders.created_at,
+
+      users.full_name AS customer_name,
+      users.email AS customer_email,
+      users.phone AS customer_phone
+    FROM orders
+    INNER JOIN users
+      ON users.id = orders.user_id
+    ORDER BY orders.created_at DESC`,
+  );
+
+  return orders;
+};
+
+export const findByIdForManagement = async (orderId) => {
+  const [orders] = await pool.execute(
+    `SELECT
+      orders.id,
+      orders.order_number,
+      orders.user_id,
+      orders.fulfillment_type,
+      orders.status,
+      orders.payment_method,
+      orders.payment_status,
+      orders.delivery_method,
+      orders.delivery_zone_name,
+      orders.recipient_name,
+      orders.recipient_phone,
+      orders.delivery_address,
+      orders.pickup_time_slot,
+      orders.subtotal,
+      orders.delivery_fee,
+      orders.total_amount,
+      orders.deposit_percentage,
+      orders.deposit_amount,
+      orders.estimated_ready_date,
+      orders.created_at,
+      orders.updated_at,
+
+      users.full_name AS customer_name,
+      users.email AS customer_email,
+      users.phone AS customer_phone
+    FROM orders
+    INNER JOIN users
+      ON users.id = orders.user_id
+    WHERE orders.id = ?
+    LIMIT 1`,
+    [orderId],
+  );
+
+  return orders[0] || null;
+};
+
+export const updateOrderStatus = async (orderId, status) => {
+  await pool.execute(
+    `UPDATE orders
+    SET status = ?
+    WHERE id = ?`,
+    [status, orderId],
+  );
+};
