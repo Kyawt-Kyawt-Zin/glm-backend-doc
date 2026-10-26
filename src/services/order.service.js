@@ -405,3 +405,84 @@ export const checkoutMyCart = async (userId, checkoutData) => {
     }
   }
 };
+
+const formatOrderAmounts = (order) => {
+  return {
+    ...order,
+    subtotal: Number(order.subtotal),
+    delivery_fee: Number(order.delivery_fee),
+    total_amount: Number(order.total_amount),
+    deposit_percentage: Number(order.deposit_percentage),
+    deposit_amount: Number(order.deposit_amount),
+  };
+};
+
+export const getMyOrders = async (userId) => {
+  try {
+    const orders = await orderRepository.findAllByUserId(userId);
+
+    return Response.success(
+      orders.map((order) => {
+        return {
+          ...order,
+          total_amount: Number(order.total_amount),
+          deposit_amount: Number(order.deposit_amount),
+        };
+      }),
+      "Orders fetched successfully",
+    );
+  } catch (error) {
+    console.error("getMyOrders service error:", error.message);
+
+    return Response.internalServerError("Unable to fetch orders");
+  }
+};
+
+export const getMyOrderById = async (userId, orderId) => {
+  const numericOrderId = Number(orderId);
+
+  if (!isPositiveInteger(numericOrderId)) {
+    return Response.badRequest("Order ID must be a positive whole number");
+  }
+
+  try {
+    const order = await orderRepository.findByIdAndUserId(
+      numericOrderId,
+      userId,
+    );
+
+    if (!order) {
+      return Response.notFound("Order not found");
+    }
+
+    const [items, payments] = await Promise.all([
+      orderRepository.findItemsByOrderId(numericOrderId),
+      orderRepository.findPaymentsByOrderId(numericOrderId),
+    ]);
+
+    return Response.success(
+      {
+        order: formatOrderAmounts(order),
+        items: items.map((item) => {
+          return {
+            ...item,
+            unit_price: Number(item.unit_price),
+            line_total: Number(item.line_total),
+            deposit_percentage: Number(item.deposit_percentage),
+          };
+        }),
+        payments: payments.map((payment) => {
+          return {
+            ...payment,
+            amount: Number(payment.amount),
+          };
+        }),
+      },
+      "Order fetched successfully",
+    );
+  } catch (error) {
+    console.error("getMyOrderById service error:", error.message);
+
+    return Response.internalServerError("Unable to fetch order");
+  }
+};

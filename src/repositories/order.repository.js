@@ -204,3 +204,107 @@ export const markCartCheckedOut = async (connection, cartId) => {
     [cartId],
   );
 };
+
+export const findAllByUserId = async (userId) => {
+  const [orders] = await pool.execute(
+    `SELECT
+      id,
+      order_number,
+      fulfillment_type,
+      status,
+      payment_method,
+      payment_status,
+      delivery_method,
+      delivery_zone_name,
+      total_amount,
+      deposit_amount,
+      estimated_ready_date,
+      created_at
+    FROM orders
+    WHERE user_id = ?
+    ORDER BY created_at DESC`,
+    [userId],
+  );
+
+  return orders;
+};
+
+export const findByIdAndUserId = async (orderId, userId) => {
+  const [orders] = await pool.execute(
+    `SELECT
+      id,
+      order_number,
+      user_id,
+      fulfillment_type,
+      status,
+      payment_method,
+      payment_status,
+      delivery_method,
+      delivery_zone_name,
+      recipient_name,
+      recipient_phone,
+      delivery_address,
+      pickup_time_slot,
+      subtotal,
+      delivery_fee,
+      total_amount,
+      deposit_percentage,
+      deposit_amount,
+      estimated_ready_date,
+      created_at,
+      updated_at
+    FROM orders
+    WHERE id = ?
+      AND user_id = ?
+    LIMIT 1`,
+    [orderId, userId],
+  );
+
+  return orders[0] || null;
+};
+
+export const findItemsByOrderId = async (orderId) => {
+  const [items] = await pool.execute(
+    `SELECT
+      id,
+      product_name,
+      product_slug,
+      category_name,
+      color,
+      size,
+      sku,
+      unit_price,
+      quantity,
+      line_total,
+      preorder_lead_days,
+      deposit_percentage,
+      created_at
+    FROM order_items
+    WHERE order_id = ?
+    ORDER BY id ASC`,
+    [orderId],
+  );
+
+  return items;
+};
+
+export const findPaymentsByOrderId = async (orderId) => {
+  const [payments] = await pool.execute(
+    `SELECT
+      id,
+      payment_type,
+      payment_method,
+      amount,
+      status,
+      transaction_reference,
+      confirmed_at,
+      created_at,
+      updated_at
+    FROM payments
+    WHERE order_id = ?
+    ORDER BY id ASC`,
+    [orderId],
+  );
+
+  return payments;
+};

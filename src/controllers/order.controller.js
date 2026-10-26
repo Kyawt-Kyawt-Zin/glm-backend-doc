@@ -7,9 +7,21 @@ const router = Router();
 router.use(authenticate);
 
 router.post("/checkout", async (req, res) => {
-  const response = await orderService.checkoutMyCart(
+  const response = await orderService.checkoutMyCart(req.user.userId, req.body);
+
+  return res.status(response.code).json(response);
+});
+
+router.get("/my", async (req, res) => {
+  const response = await orderService.getMyOrders(req.user.userId);
+
+  return res.status(response.code).json(response);
+});
+
+router.get("/my/:orderId", async (req, res) => {
+  const response = await orderService.getMyOrderById(
     req.user.userId,
-    req.body,
+    req.params.orderId,
   );
 
   return res.status(response.code).json(response);
