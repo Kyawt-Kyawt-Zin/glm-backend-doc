@@ -5,6 +5,7 @@ import productController from "./product.controller.js";
 import productVariantController from "./product-variant.controller.js";
 import authController from "./auth.controller.js";
 import cartController from "./cart.controller.js";
+import orderController from "./order.controller.js";
 
 const router = Router();
 
@@ -14,5 +15,6 @@ router.use("/products", productController);
 router.use("/product-variants", productVariantController);
 router.use("/auth", authController);
 router.use("/cart", cartController);
+router.use("/orders", orderController);
 
 export default router;

@@ -103,3 +103,204 @@ CREATE TABLE cart_items (
 
   UNIQUE KEY unique_cart_variant (cart_id, product_variant_id)
 );
+
+CREATE TABLE orders (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  order_number VARCHAR(40) NOT NULL UNIQUE,
+  user_id BIGINT UNSIGNED NOT NULL,
+
+  fulfillment_type ENUM('in_stock', 'preorder') NOT NULL,
+
+  status ENUM(
+    'pending',
+    'confirmed',
+    'processing',
+    'ready_for_delivery',
+    'out_for_delivery',
+    'ready_for_pickup',
+    'delivered',
+    'cancelled'
+  ) NOT NULL DEFAULT 'pending',
+
+  payment_method ENUM(
+    'cash_on_delivery',
+    'bank_transfer'
+  ) NOT NULL,
+
+  payment_status ENUM(
+    'unpaid',
+    'deposit_pending',
+    'deposit_submitted',
+    'deposit_confirmed',
+    'paid',
+    'refunded'
+  ) NOT NULL DEFAULT 'unpaid',
+
+  delivery_method ENUM(
+    'standard',
+    'quick',
+    'pickup'
+  ) DEFAULT NULL,
+
+  recipient_name VARCHAR(100) NOT NULL,
+  recipient_phone VARCHAR(30) NOT NULL,
+  delivery_address TEXT DEFAULT NULL,
+  pickup_time_slot VARCHAR(100) DEFAULT NULL,
+
+  subtotal DECIMAL(10, 2) NOT NULL,
+  delivery_fee DECIMAL(10, 2) NOT NULL DEFAULT 0.00,
+  total_amount DECIMAL(10, 2) NOT NULL,
+
+  deposit_percentage DECIMAL(5, 2) NOT NULL DEFAULT 0.00,
+  deposit_amount DECIMAL(10, 2) NOT NULL DEFAULT 0.00,
+
+  estimated_ready_date DATE DEFAULT NULL,
+
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+  CONSTRAINT fk_orders_user
+    FOREIGN KEY (user_id)
+    REFERENCES users(id)
+    ON UPDATE CASCADE
+    ON DELETE RESTRICT,
+
+  INDEX idx_orders_user_created (user_id, created_at),
+  INDEX idx_orders_status (status)
+);
+
+CREATE TABLE order_items (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  order_id BIGINT UNSIGNED NOT NULL,
+  product_id BIGINT UNSIGNED NOT NULL,
+  product_variant_id BIGINT UNSIGNED NOT NULL,
+
+  product_name VARCHAR(150) NOT NULL,
+  product_slug VARCHAR(180) NOT NULL,
+  category_name VARCHAR(100) NOT NULL,
+
+  color VARCHAR(50) NOT NULL,
+  size VARCHAR(30) NOT NULL,
+  sku VARCHAR(100) NOT NULL,
+
+  unit_price DECIMAL(10, 2) NOT NULL,
+  quantity INT UNSIGNED NOT NULL,
+  line_total DECIMAL(10, 2) NOT NULL,
+
+  preorder_lead_days SMALLINT UNSIGNED DEFAULT NULL,
+  deposit_percentage DECIMAL(5, 2) NOT NULL DEFAULT 0.00,
+
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+  CONSTRAINT fk_order_items_order
+    FOREIGN KEY (order_id)
+    REFERENCES orders(id)
+    ON UPDATE CASCADE
+    ON DELETE RESTRICT,
+
+  CONSTRAINT fk_order_items_product
+    FOREIGN KEY (product_id)
+    REFERENCES products(id)
+    ON UPDATE CASCADE
+    ON DELETE RESTRICT,
+
+  CONSTRAINT fk_order_items_product_variant
+    FOREIGN KEY (product_variant_id)
+    REFERENCES product_variants(id)
+    ON UPDATE CASCADE
+    ON DELETE RESTRICT,
+
+  UNIQUE KEY unique_order_variant (order_id, product_variant_id)
+);
+
+CREATE TABLE payments (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  order_id BIGINT UNSIGNED NOT NULL,
+
+  payment_type ENUM(
+    'deposit',
+    'remaining_balance',
+    'full_payment'
+  ) NOT NULL,
+
+  payment_method ENUM(
+    'cash_on_delivery',
+    'bank_transfer'
+  ) NOT NULL,
+
+  amount DECIMAL(10, 2) NOT NULL,
+
+  status ENUM(
+    'pending',
+    'submitted',
+    'confirmed',
+    'rejected',
+    'refunded'
+  ) NOT NULL DEFAULT 'pending',
+
+  payment_proof_path VARCHAR(255) DEFAULT NULL,
+  transaction_reference VARCHAR(100) DEFAULT NULL,
+
+  confirmed_by BIGINT UNSIGNED DEFAULT NULL,
+  confirmed_at TIMESTAMP NULL DEFAULT NULL,
+  notes TEXT DEFAULT NULL,
+
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+  CONSTRAINT fk_payments_order
+    FOREIGN KEY (order_id)
+    REFERENCES orders(id)
+    ON UPDATE CASCADE
+    ON DELETE RESTRICT,
+
+  CONSTRAINT fk_payments_confirmed_by
+    FOREIGN KEY (confirmed_by)
+    REFERENCES users(id)
+    ON UPDATE CASCADE
+    ON DELETE SET NULL,
+
+  INDEX idx_payments_order (order_id),
+  INDEX idx_payments_status (status)
+);
+
+INSERT INTO delivery_zones (
+  name,
+  area_description,
+  standard_fee,
+  quick_fee
+)
+VALUES
+  (
+    'Rigga and Union',
+    'Al Rigga, Union, and BurJuman — Dubai only',
+    10.00,
+    20.00
+  ),
+  (
+    'ADCB to Dubai Mall',
+    'Areas from ADCB to Dubai Mall — Dubai only',
+    15.00,
+    25.00
+  ),
+  (
+    'Other Dubai Areas',
+    'All Green Line areas and areas after Dubai Mall — Dubai only',
+    20.00,
+    30.00
+  );
+
+  ALTER TABLE orders
+  MODIFY COLUMN payment_method ENUM(
+    'cash_on_delivery',
+    'cash_on_pickup',
+    'bank_transfer',
+    'split_payment'
+  ) NOT NULL;
+
+  ALTER TABLE payments
+  MODIFY COLUMN payment_method ENUM(
+    'cash_on_delivery',
+    'cash_on_pickup',
+    'bank_transfer'
+  ) NOT NULL;
