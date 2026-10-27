@@ -81,9 +81,11 @@ export const createOrder = async (connection, order) => {
       total_amount,
       deposit_percentage,
       deposit_amount,
-      estimated_ready_date
+      estimated_ready_date,
+      preorder_terms_accepted_at,
+      preorder_terms_version
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       order.orderNumber,
       order.userId,
@@ -104,6 +106,8 @@ export const createOrder = async (connection, order) => {
       order.depositPercentage,
       order.depositAmount,
       order.estimatedReadyDate,
+      order.preorderTermsAcceptedAt,
+      order.preorderTermsVersion,
     ],
   );
 

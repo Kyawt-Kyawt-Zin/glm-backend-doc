@@ -4,6 +4,7 @@ import * as orderRepository from "../repositories/order.repository.js";
 import * as deliveryZoneRepository from "../repositories/delivery-zone.repository.js";
 
 const PREORDER_DEPOSIT_PERCENTAGE = 20;
+const PREORDER_TERMS_VERSION = "v1";
 
 const isPositiveInteger = (value) => {
   return Number.isInteger(Number(value)) && Number(value) > 0;
@@ -167,6 +168,8 @@ const createOrderWithItems = async ({
     depositPercentage,
     depositAmount,
     estimatedReadyDate,
+    preorderTermsAcceptedAt: isPreorder ? new Date() : null,
+    preorderTermsVersion: isPreorder ? PREORDER_TERMS_VERSION : null,
   });
 
   for (const item of items) {
@@ -300,6 +303,17 @@ export const checkoutMyCart = async (userId, checkoutData) => {
     const preorderItems = cartItems.filter(
       (item) => item.fulfillment_type === "preorder",
     );
+
+    if (
+      preorderItems.length > 0 &&
+      checkoutData?.preorderTermsAccepted !== true
+    ) {
+      await connection.rollback();
+
+      return Response.badRequest(
+        "You must accept the preorder terms before checkout",
+      );
+    }
 
     const stockProblem = inStockItems.find((item) => {
       return Number(item.stock_quantity) < Number(item.quantity);
@@ -557,11 +571,7 @@ export const getOrderForManagement = async (orderId) => {
 const allowedStatusTransitions = {
   pending: ["confirmed", "cancelled"],
   confirmed: ["processing", "cancelled"],
-  processing: [
-    "ready_for_delivery",
-    "ready_for_pickup",
-    "cancelled",
-  ],
+  processing: ["ready_for_delivery", "ready_for_pickup", "cancelled"],
   ready_for_delivery: ["out_for_delivery", "cancelled"],
   out_for_delivery: ["delivered"],
   ready_for_pickup: ["picked_up", "cancelled"],
@@ -570,10 +580,7 @@ const allowedStatusTransitions = {
   cancelled: [],
 };
 
-export const updateOrderStatusForManagement = async (
-  orderId,
-  { status },
-) => {
+export const updateOrderStatusForManagement = async (orderId, { status }) => {
   const numericOrderId = Number(orderId);
   const nextStatus = String(status || "").trim();
 
@@ -638,7 +645,10 @@ export const updateOrderStatusForManagement = async (
       "Order status updated successfully",
     );
   } catch (error) {
-    console.error("updateOrderStatusForManagement service error:", error.message);
+    console.error(
+      "updateOrderStatusForManagement service error:",
+      error.message,
+    );
 
     return Response.internalServerError("Unable to update order status");
   }

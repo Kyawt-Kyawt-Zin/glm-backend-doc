@@ -128,13 +128,14 @@ CREATE TABLE orders (
   ) NOT NULL,
 
   payment_status ENUM(
-    'unpaid',
-    'deposit_pending',
-    'deposit_submitted',
-    'deposit_confirmed',
-    'paid',
-    'refunded'
-  ) NOT NULL DEFAULT 'unpaid',
+  'unpaid',
+  'deposit_pending',
+  'deposit_submitted',
+  'deposit_confirmed',
+  'paid',
+  'refund_pending',
+  'refunded'
+) NOT NULL DEFAULT 'unpaid',
 
   delivery_method ENUM(
     'standard',
@@ -155,6 +156,11 @@ CREATE TABLE orders (
   deposit_amount DECIMAL(10, 2) NOT NULL DEFAULT 0.00,
 
   estimated_ready_date DATE DEFAULT NULL,
+
+  preorder_terms_accepted_at TIMESTAMP NULL,
+  preorder_terms_version VARCHAR(20) NULL,
+  confirmed_at TIMESTAMP NULL,
+  cancellation_deadline TIMESTAMP NULL,
 
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -317,3 +323,105 @@ VALUES
     'picked_up',
     'cancelled'
   ) NOT NULL DEFAULT 'pending';
+
+  CREATE TABLE order_change_requests (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  order_id BIGINT UNSIGNED NOT NULL,
+  user_id BIGINT UNSIGNED NOT NULL,
+  order_item_id BIGINT UNSIGNED NULL,
+
+  request_type ENUM('change_variant', 'cancel_order') NOT NULL,
+  requested_variant_id BIGINT UNSIGNED NULL,
+  customer_note TEXT NULL,
+  deposit_forfeit_acknowledged BOOLEAN NOT NULL DEFAULT FALSE,
+  deposit_forfeit_acknowledged_at TIMESTAMP NULL,
+
+  status ENUM('pending', 'approved', 'rejected') NOT NULL DEFAULT 'pending',
+  staff_note TEXT NULL,
+  reviewed_by BIGINT UNSIGNED NULL,
+  reviewed_at TIMESTAMP NULL,
+
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+  CONSTRAINT fk_change_request_order
+    FOREIGN KEY (order_id) REFERENCES orders(id)
+    ON UPDATE CASCADE
+    ON DELETE RESTRICT,
+
+  CONSTRAINT fk_change_request_customer
+    FOREIGN KEY (user_id) REFERENCES users(id)
+    ON UPDATE CASCADE
+    ON DELETE RESTRICT,
+
+  CONSTRAINT fk_change_request_order_item
+    FOREIGN KEY (order_item_id) REFERENCES order_items(id)
+    ON UPDATE CASCADE
+    ON DELETE RESTRICT,
+
+  CONSTRAINT fk_change_request_variant
+    FOREIGN KEY (requested_variant_id) REFERENCES product_variants(id)
+    ON UPDATE CASCADE
+    ON DELETE RESTRICT,
+
+  CONSTRAINT fk_change_request_reviewer
+    FOREIGN KEY (reviewed_by) REFERENCES users(id)
+    ON UPDATE CASCADE
+    ON DELETE SET NULL,
+
+  INDEX idx_change_request_order (order_id),
+  INDEX idx_change_request_customer_status (user_id, status),
+  INDEX idx_change_request_status (status)
+);
+
+-- Migration: add refund-pending payment state for cancelled paid orders
+ALTER TABLE orders
+  MODIFY payment_status ENUM(
+    'unpaid',
+    'deposit_pending',
+    'deposit_submitted',
+    'deposit_confirmed',
+    'paid',
+    'refund_pending',
+    'refunded'
+  ) NOT NULL DEFAULT 'unpaid';
+
+  payment_status ENUM(
+  'unpaid',
+  'deposit_pending',
+  'deposit_submitted',
+  'deposit_confirmed',
+  'deposit_forfeited',
+  'paid',
+  'refund_pending',
+  'refunded'
+) NOT NULL DEFAULT 'unpaid',
+
+-- Migration: preorder cancellation and refund policy
+ALTER TABLE orders
+  MODIFY payment_status ENUM(
+    'unpaid',
+    'deposit_pending',
+    'deposit_submitted',
+    'deposit_confirmed',
+    'deposit_forfeited',
+    'paid',
+    'refund_pending',
+    'refunded'
+  ) NOT NULL DEFAULT 'unpaid';
+
+  ALTER TABLE orders
+  ADD COLUMN preorder_terms_accepted_at TIMESTAMP NULL
+    AFTER estimated_ready_date,
+  ADD COLUMN preorder_terms_version VARCHAR(20) NULL
+    AFTER preorder_terms_accepted_at,
+  ADD COLUMN confirmed_at TIMESTAMP NULL
+    AFTER preorder_terms_version,
+  ADD COLUMN cancellation_deadline TIMESTAMP NULL
+    AFTER confirmed_at;
+
+    ALTER TABLE order_change_requests
+  ADD COLUMN deposit_forfeit_acknowledged BOOLEAN NOT NULL DEFAULT FALSE
+    AFTER customer_note,
+  ADD COLUMN deposit_forfeit_acknowledged_at TIMESTAMP NULL
+    AFTER deposit_forfeit_acknowledged;
