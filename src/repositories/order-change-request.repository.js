@@ -3,7 +3,13 @@ import pool from "../helper/db_helper.js";
 export const findOrderByIdAndUserId = async (orderId, userId) => {
   const [rows] = await pool.execute(
     `
-      SELECT id, status, fulfillment_type, payment_status
+      SELECT
+            id,
+            status,
+            fulfillment_type,
+            payment_status,
+            confirmed_at,
+            cancellation_deadline
       FROM orders
       WHERE id = ? AND user_id = ?
     `,
@@ -75,6 +81,7 @@ export const create = async ({
   requestType,
   requestedVariantId,
   customerNote,
+  depositForfeitAcknowledged,
 }) => {
   const [result] = await pool.execute(
     `
@@ -84,9 +91,11 @@ export const create = async ({
         order_item_id,
         request_type,
         requested_variant_id,
-        customer_note
+        customer_note,
+        deposit_forfeit_acknowledged,
+        deposit_forfeit_acknowledged_at
       )
-      VALUES (?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `,
     [
       orderId,
@@ -95,6 +104,8 @@ export const create = async ({
       requestType,
       requestedVariantId,
       customerNote,
+      depositForfeitAcknowledged,
+      depositForfeitAcknowledged ? new Date() : null,
     ],
   );
 
@@ -234,10 +245,12 @@ export const findByIdForReview = async (connection, requestId) => {
         order_change_requests.request_type,
         order_change_requests.requested_variant_id,
         order_change_requests.status,
+        order_change_requests.deposit_forfeit_acknowledged,
 
         orders.fulfillment_type,
         orders.status AS order_status,
-        orders.payment_status
+        orders.payment_status,
+        orders.cancellation_deadline
       FROM order_change_requests
       INNER JOIN orders ON orders.id = order_change_requests.order_id
       WHERE order_change_requests.id = ?

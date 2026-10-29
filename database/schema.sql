@@ -249,6 +249,11 @@ CREATE TABLE payments (
 
   confirmed_by BIGINT UNSIGNED DEFAULT NULL,
   confirmed_at TIMESTAMP NULL DEFAULT NULL,
+  refund_amount DECIMAL(10,2) NULL,
+  refund_reference VARCHAR(150) NULL,
+  refunded_by BIGINT UNSIGNED NULL,
+  refunded_at TIMESTAMP NULL,
+  refund_notes TEXT NULL,
   notes TEXT DEFAULT NULL,
 
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -265,6 +270,11 @@ CREATE TABLE payments (
     REFERENCES users(id)
     ON UPDATE CASCADE
     ON DELETE SET NULL,
+
+  CONSTRAINT fk_payment_refunded_by
+  FOREIGN KEY (refunded_by) REFERENCES users(id)
+  ON UPDATE CASCADE
+  ON DELETE SET NULL,
 
   INDEX idx_payments_order (order_id),
   INDEX idx_payments_status (status)
@@ -425,3 +435,20 @@ ALTER TABLE orders
     AFTER customer_note,
   ADD COLUMN deposit_forfeit_acknowledged_at TIMESTAMP NULL
     AFTER deposit_forfeit_acknowledged;
+
+    -- Migration: record completed manual refunds
+ALTER TABLE payments
+  ADD COLUMN refund_amount DECIMAL(10,2) NULL
+    AFTER confirmed_at,
+  ADD COLUMN refund_reference VARCHAR(150) NULL
+    AFTER refund_amount,
+  ADD COLUMN refunded_by BIGINT UNSIGNED NULL
+    AFTER refund_reference,
+  ADD COLUMN refunded_at TIMESTAMP NULL
+    AFTER refunded_by,
+  ADD COLUMN refund_notes TEXT NULL
+    AFTER refunded_at,
+  ADD CONSTRAINT fk_payment_refunded_by
+    FOREIGN KEY (refunded_by) REFERENCES users(id)
+    ON UPDATE CASCADE
+    ON DELETE SET NULL;

@@ -4,11 +4,18 @@ import * as changeRequestRepository from "../repositories/order-change-request.r
 const allowedRequestTypes = ["change_variant", "cancel_order"];
 const changeableOrderStatuses = ["pending", "confirmed"];
 
-const buildReviewNote = (requestType, status, staffComment) => {
+const buildReviewNote = (
+  requestType,
+  status,
+  staffComment,
+  depositForfeitAcknowledged = false,
+) => {
   let automaticMessage;
 
   if (status === "approved" && requestType === "cancel_order") {
-    automaticMessage = "Cancellation approved. The order has been cancelled.";
+    automaticMessage = depositForfeitAcknowledged
+      ? "Cancellation approved. The order has been cancelled and the preorder deposit is non-refundable."
+      : "Cancellation approved. The order has been cancelled. Any confirmed deposit is pending refund.";
   } else if (status === "approved" && requestType === "change_variant") {
     automaticMessage =
       "Variant change approved. The order item has been updated.";
@@ -31,6 +38,7 @@ export const createMyOrderChangeRequest = async (userId, body) => {
       requestType,
       requestedVariantId,
       customerNote,
+      acceptDepositForfeit,
     } = body;
 
     if (!Number.isInteger(orderId) || orderId <= 0) {
@@ -59,6 +67,20 @@ export const createMyOrderChangeRequest = async (userId, body) => {
     }
 
     if (requestType === "cancel_order") {
+      const cancellationDeadline = order.cancellation_deadline
+        ? new Date(order.cancellation_deadline)
+        : null;
+
+      const isLatePreorderCancellation =
+        order.fulfillment_type === "preorder" &&
+        cancellationDeadline &&
+        new Date() > cancellationDeadline;
+
+      if (isLatePreorderCancellation && acceptDepositForfeit !== true) {
+        return Response.badRequest(
+          "The seven-day cancellation period has ended. You must accept that the deposit is non-refundable.",
+        );
+      }
       const existingRequest = await changeRequestRepository.findPendingRequest(
         orderId,
         userId,
@@ -79,6 +101,7 @@ export const createMyOrderChangeRequest = async (userId, body) => {
         requestType,
         requestedVariantId: null,
         customerNote: customerNote?.trim() || null,
+        depositForfeitAcknowledged: Boolean(isLatePreorderCancellation),
       });
 
       return Response.created(
@@ -151,6 +174,7 @@ export const createMyOrderChangeRequest = async (userId, body) => {
       requestType,
       requestedVariantId,
       customerNote: customerNote?.trim() || null,
+      depositForfeitAcknowledged: false,
     });
 
     return Response.created(
@@ -274,16 +298,24 @@ export const reviewOrderChangeRequest = async (
         }
       }
 
-      const needsRefund = [
+      const hasDepositToResolve = [
         "deposit_submitted",
         "deposit_confirmed",
         "paid",
       ].includes(request.payment_status);
 
+      const depositWasForfeited = Boolean(request.deposit_forfeit_acknowledged);
+
+      const nextPaymentStatus = hasDepositToResolve
+        ? depositWasForfeited
+          ? "deposit_forfeited"
+          : "refund_pending"
+        : "unpaid";
+
       await changeRequestRepository.cancelOrder(
         connection,
         request.order_id,
-        needsRefund ? "refund_pending" : "unpaid",
+        nextPaymentStatus,
       );
     }
 
@@ -370,6 +402,7 @@ export const reviewOrderChangeRequest = async (
       request.request_type,
       status,
       normalizedStaffComment,
+      Boolean(request.deposit_forfeit_acknowledged),
     );
 
     await changeRequestRepository.reviewWithinTransaction({

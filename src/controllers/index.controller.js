@@ -8,6 +8,7 @@ import cartController from "./cart.controller.js";
 import orderController from "./order.controller.js";
 import deliveryZoneController from "./delivery-zone.controller.js";
 import orderChangeRequestController from "./order-change-request.controller.js";
+import paymentController from "./payment.controller.js";
 
 const router = Router();
 
@@ -20,5 +21,6 @@ router.use("/cart", cartController);
 router.use("/orders", orderController);
 router.use("/delivery-zones", deliveryZoneController);
 router.use("/order-change-requests", orderChangeRequestController);
+router.use("/payments", paymentController);
 
 export default router;

@@ -5,6 +5,7 @@ import * as deliveryZoneRepository from "../repositories/delivery-zone.repositor
 
 const PREORDER_DEPOSIT_PERCENTAGE = 20;
 const PREORDER_TERMS_VERSION = "v1";
+const PREORDER_CANCELLATION_WINDOW_DAYS = 7;
 
 const isPositiveInteger = (value) => {
   return Number.isInteger(Number(value)) && Number(value) > 0;
@@ -635,12 +636,37 @@ export const updateOrderStatusForManagement = async (orderId, { status }) => {
       );
     }
 
-    await orderRepository.updateOrderStatus(numericOrderId, nextStatus);
+    let confirmationDetails = null;
+
+    if (order.fulfillment_type === "preorder" && nextStatus === "confirmed") {
+      const confirmedAt = new Date();
+      const cancellationDeadline = new Date(
+        confirmedAt.getTime() +
+          PREORDER_CANCELLATION_WINDOW_DAYS * 24 * 60 * 60 * 1000,
+      );
+
+      confirmationDetails = {
+        confirmedAt,
+        cancellationDeadline,
+      };
+    }
+
+    await orderRepository.updateOrderStatus(
+      numericOrderId,
+      nextStatus,
+      confirmationDetails,
+    );
 
     return Response.success(
       {
         ...formatOrderAmounts(order),
         status: nextStatus,
+        ...(confirmationDetails
+          ? {
+              confirmed_at: confirmationDetails.confirmedAt,
+              cancellation_deadline: confirmationDetails.cancellationDeadline,
+            }
+          : {}),
       },
       "Order status updated successfully",
     );

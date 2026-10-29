@@ -381,11 +381,38 @@ export const findByIdForManagement = async (orderId) => {
   return orders[0] || null;
 };
 
-export const updateOrderStatus = async (orderId, status) => {
+export const updateOrderStatus = async (
+  orderId,
+  status,
+  confirmationDetails = null,
+) => {
+  if (confirmationDetails) {
+    await pool.execute(
+      `
+        UPDATE orders
+        SET
+          status = ?,
+          confirmed_at = ?,
+          cancellation_deadline = ?
+        WHERE id = ?
+      `,
+      [
+        status,
+        confirmationDetails.confirmedAt,
+        confirmationDetails.cancellationDeadline,
+        orderId,
+      ],
+    );
+
+    return;
+  }
+
   await pool.execute(
-    `UPDATE orders
-    SET status = ?
-    WHERE id = ?`,
+    `
+      UPDATE orders
+      SET status = ?
+      WHERE id = ?
+    `,
     [status, orderId],
   );
 };
