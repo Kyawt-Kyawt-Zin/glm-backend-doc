@@ -452,3 +452,18 @@ ALTER TABLE payments
     FOREIGN KEY (refunded_by) REFERENCES users(id)
     ON UPDATE CASCADE
     ON DELETE SET NULL;
+
+    CREATE TABLE IF NOT EXISTS product_images (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  product_id BIGINT UNSIGNED NOT NULL,
+  image_path VARCHAR(255) NOT NULL,
+  alt_text VARCHAR(180) NULL,
+  sort_order INT UNSIGNED NOT NULL DEFAULT 0,
+  is_primary TINYINT(1) NOT NULL DEFAULT 0,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+  CONSTRAINT fk_product_images_product
+    FOREIGN KEY (product_id)
+    REFERENCES products(id)
+    ON DELETE RESTRICT
+);

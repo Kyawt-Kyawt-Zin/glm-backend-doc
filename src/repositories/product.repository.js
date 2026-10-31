@@ -17,7 +17,16 @@ export const findAll = async () => {
         products.target_gender,
         products.is_active,
         products.created_at,
-        products.updated_at
+        products.updated_at,
+        (
+        SELECT 
+          product_images.image_path
+          FROM product_images
+          WHERE product_images.product_id = products.id
+          AND product_images.is_primary = 1
+          ORDER BY product_images.id ASC
+          LIMIT 1
+        ) AS primary_image_path
       FROM products
       INNER JOIN categories
         ON products.category_id = categories.id
@@ -78,8 +87,18 @@ export const findById = async (id) => {
       products.target_gender,
       products.is_active,
       products.created_at,
-      products.updated_at
-    FROM products
+      products.updated_at,
+      products.updated_at,
+        (
+        SELECT 
+          product_images.image_path
+          FROM product_images
+          WHERE product_images.product_id = products.id
+          AND product_images.is_primary = 1
+          ORDER BY product_images.id ASC
+          LIMIT 1
+        ) AS primary_image_path
+      FROM products
     INNER JOIN categories
       ON products.category_id = categories.id
     WHERE products.id = ?
