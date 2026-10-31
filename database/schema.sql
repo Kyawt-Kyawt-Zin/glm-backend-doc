@@ -467,3 +467,33 @@ ALTER TABLE payments
     REFERENCES products(id)
     ON DELETE RESTRICT
 );
+
+CREATE TABLE IF NOT EXISTS customer_feedback (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  user_id BIGINT UNSIGNED NULL,
+  feedback_type ENUM(
+    'product_request',
+    'product_feedback',
+    'general_feedback'
+  ) NOT NULL,
+  subject VARCHAR(150) NOT NULL,
+  message TEXT NOT NULL,
+  status ENUM('new', 'in_review', 'resolved', 'closed')
+    NOT NULL DEFAULT 'new',
+  staff_note TEXT NULL,
+  reviewed_by BIGINT UNSIGNED NULL,
+  reviewed_at TIMESTAMP NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    ON UPDATE CURRENT_TIMESTAMP,
+
+  CONSTRAINT fk_customer_feedback_user
+    FOREIGN KEY (user_id)
+    REFERENCES users(id)
+    ON DELETE SET NULL,
+
+  CONSTRAINT fk_customer_feedback_reviewer
+    FOREIGN KEY (reviewed_by)
+    REFERENCES users(id)
+    ON DELETE SET NULL
+);
