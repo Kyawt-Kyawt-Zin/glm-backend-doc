@@ -73,3 +73,31 @@ export const getRecentOrders = async (limit) => {
     return Response.internalServerError("Unable to fetch recent orders");
   }
 };
+
+export const getLowStockVariants = async (threshold) => {
+  const normalizedThreshold = threshold === undefined ? 3 : Number(threshold);
+
+  if (
+    !Number.isInteger(normalizedThreshold) ||
+    normalizedThreshold < 0 ||
+    normalizedThreshold > 100
+  ) {
+    return Response.badRequest(
+      "threshold must be a whole number between 0 and 100",
+    );
+  }
+
+  try {
+    const variants =
+      await dashboardRepository.getLowStockVariants(normalizedThreshold);
+
+    return Response.success(
+      variants,
+      "Low stock variants fetched successfully",
+    );
+  } catch (error) {
+    console.error("getLowStockVariants service error:", error.message);
+
+    return Response.internalServerError("Unable to fetch low stock variants");
+  }
+};

@@ -108,3 +108,38 @@ export const getRecentOrders = async (limit) => {
 
   return orders;
 };
+
+export const getLowStockVariants = async (threshold) => {
+  const [variants] = await pool.execute(
+    `SELECT
+      product_variants.id AS variant_id,
+      product_variants.color,
+      product_variants.size,
+      product_variants.sku,
+      product_variants.stock_quantity,
+
+      products.id AS product_id,
+      products.name AS product_name,
+      products.slug AS product_slug,
+
+      categories.name AS category_name
+    FROM product_variants
+    INNER JOIN products
+      ON products.id = product_variants.product_id
+    INNER JOIN categories
+      ON categories.id = products.category_id
+    WHERE product_variants.fulfillment_type = 'in_stock'
+      AND product_variants.is_active = 1
+      AND products.is_active = 1
+      AND categories.is_active = 1
+      AND product_variants.stock_quantity <= ?
+    ORDER BY
+      product_variants.stock_quantity ASC,
+      products.name ASC,
+      product_variants.color ASC,
+      product_variants.size ASC`,
+    [threshold],
+  );
+
+  return variants;
+};

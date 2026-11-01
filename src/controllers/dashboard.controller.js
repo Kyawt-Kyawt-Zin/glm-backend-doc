@@ -27,4 +27,17 @@ router.get(
   },
 );
 
+router.get(
+  "/low-stock",
+  authenticate,
+  authorizeRoles("admin", "staff"),
+  async (req, res) => {
+    const response = await dashboardService.getLowStockVariants(
+      req.query.threshold,
+    );
+
+    return res.status(response.code).json(response);
+  },
+);
+
 export default router;
