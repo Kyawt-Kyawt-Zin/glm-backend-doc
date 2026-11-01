@@ -82,3 +82,29 @@ export const getOverviewStats = async () => {
 
   return rows[0];
 };
+
+export const getRecentOrders = async (limit) => {
+  const [orders] = await pool.execute(
+    `SELECT
+      orders.id,
+      orders.order_number,
+      orders.fulfillment_type,
+      orders.status,
+      orders.payment_status,
+      orders.delivery_method,
+      orders.delivery_zone_name,
+      orders.total_amount,
+      orders.deposit_amount,
+      orders.created_at,
+
+      users.full_name AS customer_name
+    FROM orders
+    INNER JOIN users
+      ON users.id = orders.user_id
+    ORDER BY orders.created_at DESC
+    LIMIT ?`,
+    [limit],
+  );
+
+  return orders;
+};

@@ -16,4 +16,15 @@ router.get(
   },
 );
 
+router.get(
+  "/recent-orders",
+  authenticate,
+  authorizeRoles("admin", "staff"),
+  async (req, res) => {
+    const response = await dashboardService.getRecentOrders(req.query.limit);
+
+    return res.status(response.code).json(response);
+  },
+);
+
 export default router;

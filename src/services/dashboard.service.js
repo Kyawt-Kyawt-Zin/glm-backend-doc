@@ -40,3 +40,36 @@ export const getDashboardOverview = async () => {
     return Response.internalServerError("Unable to fetch dashboard overview");
   }
 };
+
+const formatRecentOrder = (order) => {
+  return {
+    ...order,
+    total_amount: Number(order.total_amount),
+    deposit_amount: Number(order.deposit_amount),
+  };
+};
+
+export const getRecentOrders = async (limit) => {
+  const normalizedLimit = limit === undefined ? 5 : Number(limit);
+
+  if (
+    !Number.isInteger(normalizedLimit) ||
+    normalizedLimit < 1 ||
+    normalizedLimit > 20
+  ) {
+    return Response.badRequest("limit must be a whole number between 1 and 20");
+  }
+
+  try {
+    const orders = await dashboardRepository.getRecentOrders(normalizedLimit);
+
+    return Response.success(
+      orders.map(formatRecentOrder),
+      "Recent orders fetched successfully",
+    );
+  } catch (error) {
+    console.error("getRecentOrders service error:", error.message);
+
+    return Response.internalServerError("Unable to fetch recent orders");
+  }
+};
