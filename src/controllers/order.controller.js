@@ -47,6 +47,21 @@ router.patch(
     const response = await orderService.updateOrderStatusForManagement(
       req.params.orderId,
       req.body,
+      req.user.userId,
+    );
+
+    return res.status(response.code).json(response);
+  },
+);
+
+router.patch(
+  "/:orderId/status-correction",
+  authorizeRoles("admin"),
+  async (req, res) => {
+    const response = await orderService.correctOrderStatusForManagement(
+      req.params.orderId,
+      req.body,
+      req.user.userId,
     );
 
     return res.status(response.code).json(response);

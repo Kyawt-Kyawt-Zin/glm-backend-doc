@@ -581,7 +581,31 @@ const allowedStatusTransitions = {
   cancelled: [],
 };
 
-export const updateOrderStatusForManagement = async (orderId, { status }) => {
+const getWorkflowRank = (status, deliveryMethod) => {
+  const statusRanks =
+    deliveryMethod === "pickup"
+      ? {
+          pending: 0,
+          confirmed: 1,
+          processing: 2,
+          ready_for_pickup: 3,
+        }
+      : {
+          pending: 0,
+          confirmed: 1,
+          processing: 2,
+          ready_for_delivery: 3,
+          out_for_delivery: 4,
+        };
+
+  return statusRanks[status];
+};
+
+export const updateOrderStatusForManagement = async (
+  orderId,
+  { status } = {},
+  changedBy,
+) => {
   const numericOrderId = Number(orderId);
   const nextStatus = String(status || "").trim();
 
@@ -589,18 +613,33 @@ export const updateOrderStatusForManagement = async (orderId, { status }) => {
     return Response.badRequest("Order ID and status are required");
   }
 
+  let connection;
+
   try {
-    const order = await orderRepository.findByIdForManagement(numericOrderId);
+    connection = await orderRepository.getConnection();
+    await connection.beginTransaction();
+
+    const order = await orderRepository.findByIdForManagement(
+      numericOrderId,
+      connection,
+    );
+
+    const cancelTransaction = async (response) => {
+      await connection.rollback();
+      return response;
+    };
 
     if (!order) {
-      return Response.notFound("Order not found");
+      return cancelTransaction(Response.notFound("Order not found"));
     }
 
     const allowedNextStatuses = allowedStatusTransitions[order.status] || [];
 
     if (!allowedNextStatuses.includes(nextStatus)) {
-      return Response.badRequest(
-        `Order cannot move from ${order.status} to ${nextStatus}`,
+      return cancelTransaction(
+        Response.badRequest(
+          `Order cannot move from ${order.status} to ${nextStatus}`,
+        ),
       );
     }
 
@@ -609,8 +648,10 @@ export const updateOrderStatusForManagement = async (orderId, { status }) => {
       order.payment_status !== "deposit_confirmed" &&
       nextStatus !== "cancelled"
     ) {
-      return Response.badRequest(
-        "Preorder deposit must be confirmed before processing the order",
+      return cancelTransaction(
+        Response.badRequest(
+          "Preorder deposit must be confirmed before processing the order",
+        ),
       );
     }
 
@@ -622,8 +663,8 @@ export const updateOrderStatusForManagement = async (orderId, { status }) => {
         nextStatus,
       )
     ) {
-      return Response.badRequest(
-        "Pickup orders must use pickup status updates",
+      return cancelTransaction(
+        Response.badRequest("Pickup orders must use pickup status updates"),
       );
     }
 
@@ -631,8 +672,8 @@ export const updateOrderStatusForManagement = async (orderId, { status }) => {
       !isPickupOrder &&
       ["ready_for_pickup", "picked_up"].includes(nextStatus)
     ) {
-      return Response.badRequest(
-        "Delivery orders must use delivery status updates",
+      return cancelTransaction(
+        Response.badRequest("Delivery orders must use delivery status updates"),
       );
     }
 
@@ -655,7 +696,17 @@ export const updateOrderStatusForManagement = async (orderId, { status }) => {
       numericOrderId,
       nextStatus,
       confirmationDetails,
+      connection,
     );
+
+    await orderRepository.createOrderStatusHistory(connection, {
+      orderId: numericOrderId,
+      previousStatus: order.status,
+      newStatus: nextStatus,
+      changedBy,
+    });
+
+    await connection.commit();
 
     return Response.success(
       {
@@ -671,11 +722,127 @@ export const updateOrderStatusForManagement = async (orderId, { status }) => {
       "Order status updated successfully",
     );
   } catch (error) {
+    if (connection) {
+      await connection.rollback();
+    }
+
     console.error(
       "updateOrderStatusForManagement service error:",
       error.message,
     );
 
     return Response.internalServerError("Unable to update order status");
+  } finally {
+    if (connection) {
+      connection.release();
+    }
+  }
+};
+
+export const correctOrderStatusForManagement = async (
+  orderId,
+  { status, reason } = {},
+  changedBy,
+) => {
+  const numericOrderId = Number(orderId);
+  const correctedStatus = String(status || "").trim();
+  const correctionReason = String(reason || "").trim();
+
+  if (!isPositiveInteger(numericOrderId) || !correctedStatus) {
+    return Response.badRequest("Order ID and corrected status are required");
+  }
+
+  if (correctionReason.length < 10) {
+    return Response.badRequest(
+      "A correction reason must contain at least 10 characters",
+    );
+  }
+
+  let connection;
+
+  try {
+    connection = await orderRepository.getConnection();
+    await connection.beginTransaction();
+
+    const order = await orderRepository.findByIdForManagement(
+      numericOrderId,
+      connection,
+    );
+
+    const cancelTransaction = async (response) => {
+      await connection.rollback();
+      return response;
+    };
+
+    if (!order) {
+      return cancelTransaction(Response.notFound("Order not found"));
+    }
+
+    if (["delivered", "picked_up", "cancelled"].includes(order.status)) {
+      return cancelTransaction(
+        Response.badRequest(
+          "Delivered, picked-up, and cancelled orders cannot be corrected",
+        ),
+      );
+    }
+
+    const currentRank = getWorkflowRank(order.status, order.delivery_method);
+
+    const correctedRank = getWorkflowRank(
+      correctedStatus,
+      order.delivery_method,
+    );
+
+    if (
+      currentRank === undefined ||
+      correctedRank === undefined ||
+      correctedRank >= currentRank
+    ) {
+      return cancelTransaction(
+        Response.badRequest(
+          "An order correction must move the order back to an earlier valid status",
+        ),
+      );
+    }
+
+    await orderRepository.correctOrderStatus(
+      numericOrderId,
+      correctedStatus,
+      connection,
+    );
+
+    await orderRepository.createOrderStatusHistory(connection, {
+      orderId: numericOrderId,
+      previousStatus: order.status,
+      newStatus: correctedStatus,
+      actionType: "correction",
+      reason: correctionReason,
+      changedBy,
+    });
+
+    await connection.commit();
+
+    return Response.success(
+      {
+        ...formatOrderAmounts(order),
+        status: correctedStatus,
+      },
+      "Order status corrected successfully",
+    );
+  } catch (error) {
+    if (connection) {
+      await connection.rollback();
+    }
+
+    console.error(
+      "correctOrderStatusForManagement service error:",
+      error.message,
+    );
+
+    return Response.internalServerError("Unable to correct order status");
+  } finally {
+    if (connection) {
+      connection.release();
+    }
   }
 };

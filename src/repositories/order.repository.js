@@ -4,6 +4,10 @@ export const getCheckoutConnection = async () => {
   return pool.getConnection();
 };
 
+export const getConnection = async () => {
+  return pool.getConnection();
+};
+
 export const findActiveCartForCheckout = async (connection, userId) => {
   const [carts] = await connection.execute(
     `SELECT
@@ -342,8 +346,8 @@ export const findAllForManagement = async () => {
   return orders;
 };
 
-export const findByIdForManagement = async (orderId) => {
-  const [orders] = await pool.execute(
+export const findByIdForManagement = async (orderId, executor = pool) => {
+  const [orders] = await executor.execute(
     `SELECT
       orders.id,
       orders.order_number,
@@ -385,9 +389,10 @@ export const updateOrderStatus = async (
   orderId,
   status,
   confirmationDetails = null,
+  executor = pool,
 ) => {
   if (confirmationDetails) {
-    await pool.execute(
+    await executor.execute(
       `
         UPDATE orders
         SET
@@ -407,12 +412,63 @@ export const updateOrderStatus = async (
     return;
   }
 
-  await pool.execute(
+  await executor.execute(
     `
       UPDATE orders
       SET status = ?
       WHERE id = ?
     `,
     [status, orderId],
+  );
+};
+
+export const correctOrderStatus = async (
+  orderId,
+  correctedStatus,
+  connection,
+) => {
+  await connection.execute(
+    `
+      UPDATE orders
+      SET
+        status = ?,
+        confirmed_at = CASE
+          WHEN ? = 'pending' THEN NULL
+          ELSE confirmed_at
+        END,
+        cancellation_deadline = CASE
+          WHEN ? = 'pending' THEN NULL
+          ELSE cancellation_deadline
+        END
+      WHERE id = ?
+    `,
+    [correctedStatus, correctedStatus, correctedStatus, orderId],
+  );
+};
+
+export const createOrderStatusHistory = async (
+  connection,
+  {
+    orderId,
+    previousStatus,
+    newStatus,
+    actionType = "status_update",
+    reason = null,
+    changedBy,
+  },
+) => {
+  await connection.execute(
+    `
+      INSERT INTO order_status_history (
+        order_id,
+        previous_status,
+        new_status,
+        action_type,
+        reason,
+        changed_by
+      )
+      VALUES (?, ?, ?, ?, ?, ?)
+    `,
+    [orderId, previousStatus, newStatus, actionType, reason, changedBy],
   );
 };
