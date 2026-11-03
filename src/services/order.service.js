@@ -537,9 +537,10 @@ export const getOrderForManagement = async (orderId) => {
       return Response.notFound("Order not found");
     }
 
-    const [items, payments] = await Promise.all([
+    const [items, payments, statusHistory] = await Promise.all([
       orderRepository.findItemsByOrderId(numericOrderId),
       orderRepository.findPaymentsByOrderId(numericOrderId),
+      orderRepository.findStatusHistoryByOrderId(numericOrderId),
     ]);
 
     return Response.success(
@@ -559,6 +560,7 @@ export const getOrderForManagement = async (orderId) => {
             amount: Number(payment.amount),
           };
         }),
+        statusHistory,
       },
       "Order fetched successfully",
     );

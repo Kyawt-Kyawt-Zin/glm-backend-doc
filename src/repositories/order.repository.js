@@ -317,6 +317,33 @@ export const findPaymentsByOrderId = async (orderId) => {
   return payments;
 };
 
+export const findStatusHistoryByOrderId = async (orderId) => {
+  const [history] = await pool.execute(
+    `
+      SELECT
+        order_status_history.id,
+        order_status_history.previous_status,
+        order_status_history.new_status,
+        order_status_history.action_type,
+        order_status_history.reason,
+        order_status_history.created_at,
+
+        users.full_name AS changed_by_name,
+        users.role AS changed_by_role
+      FROM order_status_history
+      LEFT JOIN users
+        ON users.id = order_status_history.changed_by
+      WHERE order_status_history.order_id = ?
+      ORDER BY
+        order_status_history.created_at DESC,
+        order_status_history.id DESC
+    `,
+    [orderId],
+  );
+
+  return history;
+};
+
 export const findAllForManagement = async () => {
   const [orders] = await pool.execute(
     `SELECT
