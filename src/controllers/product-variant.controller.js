@@ -5,11 +5,16 @@ import { authorizeRoles } from "../middlewares/authorization.middleware.js";
 
 const router = Router();
 
-router.get("/", async (req, res) => {
-  const response = await productVariantService.getAllProductVariants();
+router.get(
+  "/",
+  authenticate,
+  authorizeRoles("admin", "staff"),
+  async (req, res) => {
+    const response = await productVariantService.getAllProductVariants();
 
-  return res.status(response.code).json(response);
-});
+    return res.status(response.code).json(response);
+  },
+);
 
 router.post(
   "/",

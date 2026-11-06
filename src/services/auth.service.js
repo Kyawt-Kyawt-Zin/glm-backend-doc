@@ -1,3 +1,4 @@
+import { isValidEmail } from "../helper/validation.helper.js";
 import bcrypt from "bcrypt";
 import * as userRepository from "../repositories/user.repository.js";
 import * as Response from "../config/response.helper.js";
@@ -12,6 +13,9 @@ export const login = async ({ email, password }) => {
   }
 
   try {
+    if (!isValidEmail(email)) {
+      return Response.badRequest("Please provide a valid email address.");
+    }
     const user = await userRepository.findForLogin(cleanEmail);
 
     if (!user) {

@@ -1,3 +1,4 @@
+import { isValidEmail, isValidPhone } from "../helper/validation.helper.js";
 import bcrypt from "bcrypt";
 import * as userRepository from "../repositories/user.repository.js";
 import * as Response from "../config/response.helper.js";
@@ -41,6 +42,19 @@ export const createUser = async ({
   }
 
   try {
+    if (!fullName?.trim()) {
+      return Response.badRequest("Full name is required.");
+    }
+
+    if (!isValidEmail(email)) {
+      return Response.badRequest("Please provide a valid email address.");
+    }
+
+    if (!isValidPhone(phone)) {
+      return Response.badRequest(
+        "Phone number must contain 7 to 15 digits and may start with +.",
+      );
+    }
     const existingUser = await userRepository.findByEmail(cleanEmail);
 
     if (existingUser) {
