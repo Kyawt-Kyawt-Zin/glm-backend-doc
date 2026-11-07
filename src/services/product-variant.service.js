@@ -1,16 +1,50 @@
 import * as productVariantRepository from "../repositories/product-variant.repository.js";
 import * as productRepository from "../repositories/product.repository.js";
+import {
+  createPaginationMeta,
+  getPagination,
+} from "../helper/pagination.helper.js";
 import * as Response from "../config/response.helper.js";
 
 const allowedFulfillmentTypes = ["in_stock", "preorder"];
 const defaultPreorderLeadDays = 14;
 const defaultDepositPercentage = 20;
 
-export const getAllProductVariants = async () => {
+export const getAllProductVariants = async (query = {}) => {
   try {
-    const variants = await productVariantRepository.findAll();
+    const { page, limit, offset } = getPagination(query);
+    const allowedFulfillmentTypes = ["in_stock", "preorder"];
 
-    return Response.success(variants, "Product variants fetched successfully");
+    const fulfillmentType = allowedFulfillmentTypes.includes(
+      query.fulfillmentType,
+    )
+      ? query.fulfillmentType
+      : null;
+
+    const lowStock = query.lowStock === "true";
+
+    const search =
+      typeof query.search === "string" ? query.search.trim().slice(0, 100) : "";
+
+    const { variants, total } = await productVariantRepository.findAll({
+      limit,
+      offset,
+      fulfillmentType,
+      lowStock,
+      search,
+    });
+
+    return Response.success(
+      {
+        items: variants,
+        pagination: createPaginationMeta({
+          page,
+          limit,
+          total,
+        }),
+      },
+      "Product variants fetched successfully",
+    );
   } catch (error) {
     console.error("getAllProductVariants service error:", error.message);
 
@@ -392,4 +426,3 @@ export const updateProductVariantStatus = async (id, { isActive }) => {
     );
   }
 };
-

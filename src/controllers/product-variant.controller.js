@@ -10,7 +10,9 @@ router.get(
   authenticate,
   authorizeRoles("admin", "staff"),
   async (req, res) => {
-    const response = await productVariantService.getAllProductVariants();
+    const response = await productVariantService.getAllProductVariants(
+      req.query,
+    );
 
     return res.status(response.code).json(response);
   },

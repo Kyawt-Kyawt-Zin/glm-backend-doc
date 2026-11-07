@@ -130,6 +130,19 @@ export const updateUser = async (
   }
 
   try {
+    if (!fullName?.trim()) {
+      return Response.badRequest("Full name is required.");
+    }
+
+    if (!isValidEmail(email)) {
+      return Response.badRequest("Please provide a valid email address.");
+    }
+
+    if (!isValidPhone(phone)) {
+      return Response.badRequest(
+        "Phone number must contain 7 to 15 digits and may start with +.",
+      );
+    }
     const user = await userRepository.findById(userId);
 
     if (!user) {
