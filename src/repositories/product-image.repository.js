@@ -5,6 +5,7 @@ export const findAllByProductId = async (productId) => {
     `SELECT
       id,
       product_id,
+      product_variant_id,
       image_path,
       alt_text,
       sort_order,
@@ -24,6 +25,7 @@ export const findById = async (id) => {
     `SELECT
       id,
       product_id,
+      product_variant_id,
       image_path,
       alt_text,
       sort_order,
@@ -49,6 +51,7 @@ export const clearPrimaryImage = async (productId) => {
 
 export const createImage = async ({
   productId,
+  productVariantId,
   imagePath,
   altText,
   sortOrder,
@@ -57,13 +60,21 @@ export const createImage = async ({
   const [result] = await pool.execute(
     `INSERT INTO product_images (
       product_id,
+      product_variant_id,
       image_path,
       alt_text,
       sort_order,
       is_primary
     )
-    VALUES (?, ?, ?, ?, ?)`,
-    [productId, imagePath, altText || null, sortOrder || 0, isPrimary ? 1 : 0],
+    VALUES (?, ?, ?, ?, ?, ?)`,
+    [
+      productId,
+      productVariantId,
+      imagePath,
+      altText || null,
+      sortOrder || 0,
+      isPrimary ? 1 : 0,
+    ],
   );
 
   return result.insertId;

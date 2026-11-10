@@ -3,6 +3,7 @@ import path from "node:path";
 import * as Response from "../config/response.helper.js";
 import * as productRepository from "../repositories/product.repository.js";
 import * as productImageRepository from "../repositories/product-image.repository.js";
+import * as productVariantRepository from "../repositories/product-variant.repository.js";
 
 const removeUploadedFile = async (filePath) => {
   if (!filePath) {
@@ -39,7 +40,7 @@ export const getProductImages = async (productId) => {
 export const uploadProductImage = async (
   productId,
   file,
-  { altText, sortOrder, isPrimary },
+  { altText, sortOrder, isPrimary, variantId },
 ) => {
   try {
     if (!file) {
@@ -60,6 +61,35 @@ export const uploadProductImage = async (
       await removeUploadedFile(file.path);
 
       return Response.notFound("Product not found");
+    }
+
+    let normalizedVariantId = null;
+
+    if (variantId !== undefined && variantId !== "") {
+      normalizedVariantId = Number(variantId);
+
+      if (!Number.isInteger(normalizedVariantId) || normalizedVariantId < 1) {
+        await removeUploadedFile(file.path);
+
+        return Response.badRequest("A valid variant ID is required");
+      }
+
+      const variant =
+        await productVariantRepository.findById(normalizedVariantId);
+
+      if (!variant) {
+        await removeUploadedFile(file.path);
+
+        return Response.notFound("Product variant not found");
+      }
+
+      if (Number(variant.product_id) !== normalizedProductId) {
+        await removeUploadedFile(file.path);
+
+        return Response.badRequest(
+          "The selected variant does not belong to this product",
+        );
+      }
     }
 
     const normalizedSortOrder =
@@ -96,6 +126,7 @@ export const uploadProductImage = async (
 
     const imageId = await productImageRepository.createImage({
       productId: normalizedProductId,
+      productVariantId: normalizedVariantId,
       imagePath,
       altText: altText?.trim(),
       sortOrder: normalizedSortOrder,
