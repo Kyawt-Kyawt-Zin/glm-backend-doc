@@ -71,6 +71,14 @@ export const createProductVariant = async ({
     const cleanFulfillmentType = fulfillmentType?.trim().toLowerCase();
     const normalizedStockQuantity = Number(stockQuantity);
 
+    const usesQuarterAedPrice = (price) => {
+      const priceInFils = Math.round(price * 100);
+
+      return (
+        Math.abs(price * 100 - priceInFils) < 0.000001 && priceInFils % 25 === 0
+      );
+    };
+
     if (!Number.isInteger(normalizedProductId) || normalizedProductId < 1) {
       return Response.badRequest("A valid productId is required");
     }
@@ -81,6 +89,9 @@ export const createProductVariant = async ({
 
     if (!Number.isFinite(normalizedPrice) || normalizedPrice <= 0) {
       return Response.badRequest("Price must be greater than zero");
+    }
+    if (!usesQuarterAedPrice(normalizedPrice)) {
+      return Response.badRequest("Price must use .00, .25, .50, or .75.");
     }
 
     if (!allowedFulfillmentTypes.includes(cleanFulfillmentType)) {
@@ -131,9 +142,12 @@ export const createProductVariant = async ({
 
       if (
         !Number.isInteger(normalizedPreorderLeadDays) ||
-        normalizedPreorderLeadDays < 1
+        normalizedPreorderLeadDays < 1 ||
+        normalizedPreorderLeadDays > 45
       ) {
-        return Response.badRequest("preorderLeadDays must be at least one day");
+        return Response.badRequest(
+          "preorderLeadDays must be between 1 and 45 days",
+        );
       }
 
       if (normalizedStockQuantity !== 0) {
@@ -262,6 +276,9 @@ export const updateProductVariant = async (
     if (!Number.isFinite(normalizedPrice) || normalizedPrice <= 0) {
       return Response.badRequest("Price must be greater than zero");
     }
+    if (!usesQuarterAedPrice(normalizedPrice)) {
+      return Response.badRequest("Price must use .00, .25, .50, or .75.");
+    }
 
     if (!allowedFulfillmentTypes.includes(cleanFulfillmentType)) {
       return Response.badRequest(
@@ -318,9 +335,12 @@ export const updateProductVariant = async (
 
       if (
         !Number.isInteger(normalizedPreorderLeadDays) ||
-        normalizedPreorderLeadDays < 1
+        normalizedPreorderLeadDays < 1 ||
+        normalizedPreorderLeadDays > 45
       ) {
-        return Response.badRequest("preorderLeadDays must be at least one day");
+        return Response.badRequest(
+          "preorderLeadDays must be between 1 and 45 days",
+        );
       }
 
       if (normalizedStockQuantity !== 0) {
