@@ -17,6 +17,71 @@ export const getAllUsers = async () => {
   }
 };
 
+export const getCustomers = async ({
+  page = 1,
+  limit = 5,
+  search = "",
+  status = "all",
+}) => {
+  const parsedPage = Number(page);
+  const parsedLimit = Number(limit);
+
+  const cleanSearch = typeof search === "string" ? search.trim() : "";
+
+  const cleanStatus =
+    typeof status === "string" ? status.trim().toLowerCase() : "all";
+
+  const allowedStatuses = ["all", "active", "inactive"];
+
+  if (!Number.isInteger(parsedPage) || parsedPage < 1) {
+    return Response.badRequest("page must be a positive whole number");
+  }
+
+  if (!Number.isInteger(parsedLimit) || parsedLimit < 1 || parsedLimit > 50) {
+    return Response.badRequest("limit must be a whole number between 1 and 50");
+  }
+
+  if (!allowedStatuses.includes(cleanStatus)) {
+    return Response.badRequest("status must be all, active, or inactive");
+  }
+
+  const offset = (parsedPage - 1) * parsedLimit;
+
+  try {
+    const [customers, totalItems] = await Promise.all([
+      userRepository.findCustomers({
+        limit: parsedLimit,
+        offset,
+        search: cleanSearch,
+        status: cleanStatus,
+      }),
+      userRepository.countCustomers({
+        search: cleanSearch,
+        status: cleanStatus,
+      }),
+    ]);
+
+    const totalPages = Math.max(1, Math.ceil(totalItems / parsedLimit));
+
+    return Response.success(
+      {
+        customers,
+        pagination: {
+          page: parsedPage,
+          limit: parsedLimit,
+          totalItems,
+          totalPages,
+        },
+      },
+      "Customers fetched successfully",
+    );
+  } catch (error) {
+    console.error("getCustomers service error:", error.message);
+
+    return Response.internalServerError("Unable to fetch customers");
+  }
+};
+
 export const createUser = async ({
   fullName,
   email,

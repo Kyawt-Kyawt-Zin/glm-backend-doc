@@ -13,6 +13,12 @@ router.get("/", async (req, res) => {
   return res.status(response.code).json(response);
 });
 
+router.get("/customers", async (req, res) => {
+  const response = await userService.getCustomers(req.query);
+
+  return res.status(response.code).json(response);
+});
+
 router.get("/:id", async (req, res) => {
   const response = await userService.getUserById(req.params.id);
 

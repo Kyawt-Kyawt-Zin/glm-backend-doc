@@ -1,5 +1,31 @@
 import pool from "../helper/db_helper.js";
 
+const buildCustomerFilters = ({ search = "", status = "all" }) => {
+  const conditions = ["role = 'customer'"];
+  const values = [];
+
+  if (search) {
+    const searchValue = `%${search}%`;
+
+    conditions.push("(full_name LIKE ? OR email LIKE ? OR phone LIKE ?)");
+
+    values.push(searchValue, searchValue, searchValue);
+  }
+
+  if (status === "active") {
+    conditions.push("is_active = TRUE");
+  }
+
+  if (status === "inactive") {
+    conditions.push("is_active = FALSE");
+  }
+
+  return {
+    whereClause: conditions.join(" AND "),
+    values,
+  };
+};
+
 export const findAll = async () => {
   let connection;
 
@@ -23,6 +49,74 @@ export const findAll = async () => {
     return users;
   } catch (error) {
     console.error("findAll users error:", error.message);
+    throw error;
+  } finally {
+    if (connection) {
+      connection.release();
+    }
+  }
+};
+
+export const findCustomers = async ({ limit, offset, search, status }) => {
+  let connection;
+
+  try {
+    connection = await pool.getConnection();
+
+    const { whereClause, values } = buildCustomerFilters({
+      search,
+      status,
+    });
+
+    const [customers] = await connection.execute(
+      `SELECT
+        id,
+        full_name,
+        email,
+        phone,
+        role,
+        is_active,
+        created_at,
+        updated_at
+      FROM users
+      WHERE ${whereClause}
+      ORDER BY created_at DESC, id DESC
+      LIMIT ? OFFSET ?`,
+      [...values, limit, offset],
+    );
+
+    return customers;
+  } catch (error) {
+    console.error("findCustomers error:", error.message);
+    throw error;
+  } finally {
+    if (connection) {
+      connection.release();
+    }
+  }
+};
+
+export const countCustomers = async ({ search, status }) => {
+  let connection;
+
+  try {
+    connection = await pool.getConnection();
+
+    const { whereClause, values } = buildCustomerFilters({
+      search,
+      status,
+    });
+
+    const [rows] = await connection.execute(
+      `SELECT COUNT(*) AS total
+      FROM users
+      WHERE ${whereClause}`,
+      values,
+    );
+
+    return rows[0].total;
+  } catch (error) {
+    console.error("countCustomers error:", error.message);
     throw error;
   } finally {
     if (connection) {
