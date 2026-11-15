@@ -44,15 +44,9 @@ export const createCategory = async ({ name, description }) => {
       description: cleanDescription,
     });
 
-    return Response.created(
-      {
-        id: categoryId,
-        name: cleanName,
-        slug,
-        description: cleanDescription,
-      },
-      "Category created successfully",
-    );
+    const createdCategory = await categoryRepository.findById(categoryId);
+
+    return Response.created(createdCategory, "Category created successfully");
   } catch (error) {
     console.error("createCategory service error:", error.message);
 
