@@ -7,34 +7,34 @@ const router = Router();
 
 router.use(authenticate);
 
-router.post(
-  "/",
-  authorizeRoles("customer", "admin"),
-  async (req, res) => {
-    const response = await feedbackService.createMyFeedback(
-      req.user.userId,
-      req.body,
-    );
+router.post("/", authorizeRoles("customer", "admin"), async (req, res) => {
+  const response = await feedbackService.createMyFeedback(
+    req.user.userId,
+    req.body,
+  );
 
-    return res.status(response.code).json(response);
-  },
-);
+  return res.status(response.code).json(response);
+});
 
-router.get(
-  "/my",
-  authorizeRoles("customer", "admin"),
-  async (req, res) => {
-    const response = await feedbackService.getMyFeedback(req.user.userId);
+router.get("/my", authorizeRoles("customer", "admin"), async (req, res) => {
+  const response = await feedbackService.getMyFeedback(req.user.userId);
 
-    return res.status(response.code).json(response);
-  },
-);
+  return res.status(response.code).json(response);
+});
+
+router.get("/", authorizeRoles("admin", "staff"), async (req, res) => {
+  const response = await feedbackService.getFeedbackForManagement();
+
+  return res.status(response.code).json(response);
+});
 
 router.get(
-  "/",
+  "/:feedbackId",
   authorizeRoles("admin", "staff"),
   async (req, res) => {
-    const response = await feedbackService.getFeedbackForManagement();
+    const response = await feedbackService.getFeedbackByIdForManagement(
+      req.params.feedbackId,
+    );
 
     return res.status(response.code).json(response);
   },

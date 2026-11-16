@@ -80,6 +80,29 @@ export const getFeedbackForManagement = async () => {
   }
 };
 
+export const getFeedbackByIdForManagement = async (feedbackId) => {
+  try {
+    const normalizedFeedbackId = Number(feedbackId);
+
+    if (!Number.isInteger(normalizedFeedbackId) || normalizedFeedbackId < 1) {
+      return Response.badRequest("A valid feedback ID is required");
+    }
+
+    const feedback =
+      await feedbackRepository.findOneForManagement(normalizedFeedbackId);
+
+    if (!feedback) {
+      return Response.notFound("Feedback not found");
+    }
+
+    return Response.success(feedback, "Feedback fetched successfully");
+  } catch (error) {
+    console.error("getFeedbackByIdForManagement service error:", error.message);
+
+    return Response.internalServerError("Unable to fetch feedback");
+  }
+};
+
 export const reviewFeedback = async (
   feedbackId,
   reviewedBy,
@@ -110,6 +133,12 @@ export const reviewFeedback = async (
 
     if (!feedback) {
       return Response.notFound("Feedback not found");
+    }
+
+    if (feedback.status === "closed") {
+      return Response.conflict(
+        "Closed feedback cannot be changed. It is a completed record.",
+      );
     }
 
     await feedbackRepository.reviewFeedback(normalizedFeedbackId, {

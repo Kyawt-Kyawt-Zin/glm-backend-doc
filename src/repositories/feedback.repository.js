@@ -90,6 +90,34 @@ export const findAllForManagement = async () => {
   return feedback;
 };
 
+export const findOneForManagement = async (id) => {
+  const [rows] = await pool.execute(
+    `SELECT
+      customer_feedback.id,
+      customer_feedback.feedback_type,
+      customer_feedback.subject,
+      customer_feedback.message,
+      customer_feedback.status,
+      customer_feedback.staff_note,
+      customer_feedback.reviewed_at,
+      customer_feedback.created_at,
+      customer_feedback.updated_at,
+      customers.full_name AS customer_name,
+      customers.email AS customer_email,
+      reviewers.full_name AS reviewed_by_name
+    FROM customer_feedback
+    LEFT JOIN users AS customers
+      ON customers.id = customer_feedback.user_id
+    LEFT JOIN users AS reviewers
+      ON reviewers.id = customer_feedback.reviewed_by
+    WHERE customer_feedback.id = ?
+    LIMIT 1`,
+    [id],
+  );
+
+  return rows[0];
+};
+
 export const reviewFeedback = async (id, { status, staffNote, reviewedBy }) => {
   await pool.execute(
     `UPDATE customer_feedback
