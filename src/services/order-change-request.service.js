@@ -227,6 +227,35 @@ export const getOrderChangeRequestsForManagement = async () => {
   }
 };
 
+export const getOrderChangeRequestForManagement = async (requestId) => {
+  if (!Number.isInteger(requestId) || requestId <= 0) {
+    return Response.badRequest("A valid order change request ID is required");
+  }
+
+  try {
+    const request =
+      await changeRequestRepository.findByIdForManagement(requestId);
+
+    if (!request) {
+      return Response.notFound("Order change request not found");
+    }
+
+    return Response.success(
+      request,
+      "Order change request fetched successfully",
+    );
+  } catch (error) {
+    console.error(
+      "getOrderChangeRequestForManagement service error:",
+      error.message,
+    );
+
+    return Response.internalServerError(
+      "Unable to fetch the order change request",
+    );
+  }
+};
+
 export const reviewOrderChangeRequest = async (
   staffUserId,
   requestId,

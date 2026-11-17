@@ -31,6 +31,19 @@ router.get("/", authorizeRoles("admin", "staff"), async (req, res) => {
   return res.status(response.code).json(response);
 });
 
+router.get(
+  "/:requestId",
+  authorizeRoles("admin", "staff"),
+  async (req, res) => {
+    const response =
+      await changeRequestService.getOrderChangeRequestForManagement(
+        Number(req.params.requestId),
+      );
+
+    return res.status(response.code).json(response);
+  },
+);
+
 router.patch(
   "/:requestId/review",
   authorizeRoles("admin", "staff"),

@@ -181,7 +181,7 @@ export const findAllForManagement = async () => {
       LEFT JOIN order_items ON order_items.id = order_change_requests.order_item_id
       LEFT JOIN product_variants
         ON product_variants.id = order_change_requests.requested_variant_id
-        WHERE orders.status <> 'cancelled'
+      
       ORDER BY
         CASE order_change_requests.status
           WHEN 'pending' THEN 0
@@ -198,15 +198,54 @@ export const findByIdForManagement = async (requestId) => {
   const [rows] = await pool.execute(
     `
       SELECT
-        id,
-        order_id,
-        user_id,
-        order_item_id,
-        request_type,
-        requested_variant_id,
-        status
+        order_change_requests.id,
+        order_change_requests.order_id,
+        order_change_requests.order_item_id,
+        order_change_requests.request_type,
+        order_change_requests.requested_variant_id,
+        order_change_requests.customer_note,
+        order_change_requests.status,
+        order_change_requests.staff_note,
+        order_change_requests.deposit_forfeit_acknowledged,
+        order_change_requests.deposit_forfeit_acknowledged_at,
+        order_change_requests.reviewed_at,
+        order_change_requests.created_at,
+
+        orders.order_number,
+        orders.fulfillment_type,
+        orders.status AS order_status,
+        orders.payment_status,
+        orders.confirmed_at,
+        orders.cancellation_deadline,
+
+        customers.full_name AS customer_name,
+        customers.email AS customer_email,
+        customers.phone AS customer_phone,
+
+        order_items.product_name,
+        order_items.color AS current_color,
+        order_items.size AS current_size,
+        order_items.sku AS current_sku,
+        order_items.quantity,
+
+        requested_variants.color AS requested_color,
+        requested_variants.size AS requested_size,
+        requested_variants.sku AS requested_sku,
+
+        reviewers.full_name AS reviewed_by_name
       FROM order_change_requests
-      WHERE id = ?
+      INNER JOIN orders
+        ON orders.id = order_change_requests.order_id
+      INNER JOIN users AS customers
+        ON customers.id = order_change_requests.user_id
+      LEFT JOIN order_items
+        ON order_items.id = order_change_requests.order_item_id
+      LEFT JOIN product_variants AS requested_variants
+        ON requested_variants.id = order_change_requests.requested_variant_id
+      LEFT JOIN users AS reviewers
+        ON reviewers.id = order_change_requests.reviewed_by
+      WHERE order_change_requests.id = ?
+      LIMIT 1
     `,
     [requestId],
   );
