@@ -26,6 +26,63 @@ const formatOverviewStats = (stats) => {
   };
 };
 
+const chartStatusDefinitions = [
+  { status: "pending", label: "Pending" },
+  { status: "confirmed", label: "Confirmed" },
+  { status: "processing", label: "Processing" },
+  { status: "ready_for_delivery", label: "Ready for delivery" },
+  { status: "out_for_delivery", label: "Out for delivery" },
+  { status: "ready_for_pickup", label: "Ready for pickup" },
+  { status: "delivered", label: "Delivered" },
+  { status: "picked_up", label: "Picked up" },
+  { status: "cancelled", label: "Cancelled" },
+];
+
+const formatDateKey = (date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+};
+
+const formatOrderActivity = (rows) => {
+  const countByDate = new Map(
+    rows.map((row) => [row.date, Number(row.order_count)]),
+  );
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const activity = [];
+
+  for (let daysAgo = 6; daysAgo >= 0; daysAgo -= 1) {
+    const date = new Date(today);
+    date.setDate(today.getDate() - daysAgo);
+
+    const dateKey = formatDateKey(date);
+
+    activity.push({
+      date: dateKey,
+      order_count: countByDate.get(dateKey) || 0,
+    });
+  }
+
+  return activity;
+};
+
+const formatOrderStatusCounts = (rows) => {
+  const countByStatus = new Map(
+    rows.map((row) => [row.status, Number(row.order_count)]),
+  );
+
+  return chartStatusDefinitions.map(({ status, label }) => ({
+    status,
+    label,
+    order_count: countByStatus.get(status) || 0,
+  }));
+};
+
 export const getDashboardOverview = async () => {
   try {
     const stats = await dashboardRepository.getOverviewStats();
@@ -99,5 +156,26 @@ export const getLowStockVariants = async (threshold) => {
     console.error("getLowStockVariants service error:", error.message);
 
     return Response.internalServerError("Unable to fetch low stock variants");
+  }
+};
+
+export const getDashboardAnalytics = async () => {
+  try {
+    const [activityRows, statusRows] = await Promise.all([
+      dashboardRepository.getOrderActivityLastSevenDays(),
+      dashboardRepository.getOrderStatusCounts(),
+    ]);
+
+    return Response.success(
+      {
+        order_activity: formatOrderActivity(activityRows),
+        order_statuses: formatOrderStatusCounts(statusRows),
+      },
+      "Dashboard analytics fetched successfully",
+    );
+  } catch (error) {
+    console.error("getDashboardAnalytics service error:", error.message);
+
+    return Response.internalServerError("Unable to fetch dashboard analytics");
   }
 };

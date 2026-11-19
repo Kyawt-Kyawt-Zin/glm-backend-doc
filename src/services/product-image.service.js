@@ -150,7 +150,7 @@ export const uploadProductImage = async (
 export const updateProductImage = async (
   productId,
   imageId,
-  { altText, sortOrder, isPrimary },
+  { altText, sortOrder, isPrimary, variantId },
 ) => {
   try {
     const normalizedProductId = Number(productId);
@@ -189,7 +189,35 @@ export const updateProductImage = async (
     const cleanAltText =
       altText === undefined ? image.alt_text : altText?.trim() || null;
 
+    let normalizedVariantId = image.product_variant_id;
+
+    if (variantId !== undefined) {
+      if (variantId === null || variantId === "") {
+        normalizedVariantId = null;
+      } else {
+        normalizedVariantId = Number(variantId);
+
+        if (!Number.isInteger(normalizedVariantId) || normalizedVariantId < 1) {
+          return Response.badRequest("A valid variant ID is required");
+        }
+
+        const variant =
+          await productVariantRepository.findById(normalizedVariantId);
+
+        if (!variant) {
+          return Response.notFound("Product variant not found");
+        }
+
+        if (Number(variant.product_id) !== normalizedProductId) {
+          return Response.badRequest(
+            "The selected variant does not belong to this product",
+          );
+        }
+      }
+    }
+
     await productImageRepository.updateImageDetails(normalizedImageId, {
+      productVariantId: normalizedVariantId,
       altText: cleanAltText,
       sortOrder: normalizedSortOrder,
     });

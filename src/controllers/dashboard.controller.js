@@ -17,6 +17,17 @@ router.get(
 );
 
 router.get(
+  "/analytics",
+  authenticate,
+  authorizeRoles("admin", "staff"),
+  async (req, res) => {
+    const response = await dashboardService.getDashboardAnalytics();
+
+    return res.status(response.code).json(response);
+  },
+);
+
+router.get(
   "/recent-orders",
   authenticate,
   authorizeRoles("admin", "staff"),

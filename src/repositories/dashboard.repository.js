@@ -143,3 +143,32 @@ export const getLowStockVariants = async (threshold) => {
 
   return variants;
 };
+
+export const getOrderActivityLastSevenDays = async () => {
+  const [rows] = await pool.execute(`
+    SELECT
+      DATE_FORMAT(created_at, '%Y-%m-%d') AS activity_date,
+      COUNT(*) AS order_count
+    FROM orders
+    WHERE created_at >= CURDATE() - INTERVAL 6 DAY
+    GROUP BY activity_date
+    ORDER BY activity_date ASC
+  `);
+
+  return rows.map((row) => ({
+    date: row.activity_date,
+    order_count: row.order_count,
+  }));
+};
+
+export const getOrderStatusCounts = async () => {
+  const [rows] = await pool.execute(`
+    SELECT
+      status,
+      COUNT(*) AS order_count
+    FROM orders
+    GROUP BY status
+  `);
+
+  return rows;
+};

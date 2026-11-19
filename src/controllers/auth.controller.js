@@ -5,6 +5,12 @@ import * as Response from "../config/response.helper.js";
 
 const router = Router();
 
+router.post("/register", async (req, res) => {
+  const response = await authService.registerCustomer(req.body);
+
+  return res.status(response.code).json(response);
+});
+
 router.post("/login", async (req, res) => {
   const response = await authService.login(req.body);
 

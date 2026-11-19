@@ -98,13 +98,17 @@ export const setPrimaryById = async (id) => {
   );
 };
 
-export const updateImageDetails = async (id, { altText, sortOrder }) => {
+export const updateImageDetails = async (
+  id,
+  { productVariantId, altText, sortOrder },
+) => {
   await pool.execute(
     `UPDATE product_images
      SET
+       product_variant_id = ?,
        alt_text = ?,
        sort_order = ?
      WHERE id = ?`,
-    [altText || null, sortOrder, id],
+    [productVariantId, altText || null, sortOrder, id],
   );
 };
