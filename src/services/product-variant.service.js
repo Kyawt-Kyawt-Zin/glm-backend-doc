@@ -10,6 +10,16 @@ const allowedFulfillmentTypes = ["in_stock", "preorder"];
 const defaultPreorderLeadDays = 14;
 const defaultDepositPercentage = 20;
 
+// AED prices may use fils in quarters only: .00, .25, .50, or .75.
+// Both create and update use this same validation rule.
+const usesQuarterAedPrice = (price) => {
+  const priceInFils = Math.round(price * 100);
+
+  return (
+    Math.abs(price * 100 - priceInFils) < 0.000001 && priceInFils % 25 === 0
+  );
+};
+
 export const getAllProductVariants = async (query = {}) => {
   try {
     const { page, limit, offset } = getPagination(query);
@@ -70,14 +80,6 @@ export const createProductVariant = async ({
     const normalizedPrice = Number(price);
     const cleanFulfillmentType = fulfillmentType?.trim().toLowerCase();
     const normalizedStockQuantity = Number(stockQuantity);
-
-    const usesQuarterAedPrice = (price) => {
-      const priceInFils = Math.round(price * 100);
-
-      return (
-        Math.abs(price * 100 - priceInFils) < 0.000001 && priceInFils % 25 === 0
-      );
-    };
 
     if (!Number.isInteger(normalizedProductId) || normalizedProductId < 1) {
       return Response.badRequest("A valid productId is required");

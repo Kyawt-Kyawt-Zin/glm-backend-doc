@@ -2,6 +2,11 @@ import { Router } from "express";
 import * as userService from "../services/user.service.js";
 import { authenticate } from "../middlewares/auth.middleware.js";
 import { authorizeRoles } from "../middlewares/authorization.middleware.js";
+import {
+  validateCustomerIdParam,
+  validateCustomerListQuery,
+  validateCustomerStatusUpdate,
+} from "../validators/user.validator.js";
 
 const router = Router();
 
@@ -13,13 +18,19 @@ router.get("/", async (req, res) => {
   return res.status(response.code).json(response);
 });
 
-router.get("/customers", async (req, res) => {
+router.get("/customers", validateCustomerListQuery, async (req, res) => {
   const response = await userService.getCustomers(req.query);
 
   return res.status(response.code).json(response);
 });
 
-router.get("/:id", async (req, res) => {
+router.get("/:id/orders", validateCustomerIdParam, async (req, res) => {
+  const response = await userService.getCustomerOrderHistory(req.params.id);
+
+  return res.status(response.code).json(response);
+});
+
+router.get("/:id", validateCustomerIdParam, async (req, res) => {
   const response = await userService.getUserById(req.params.id);
 
   return res.status(response.code).json(response);
@@ -33,6 +44,15 @@ router.post("/", async (req, res) => {
 
 router.put("/:id", async (req, res) => {
   const response = await userService.updateUser(req.params.id, req.body);
+
+  return res.status(response.code).json(response);
+});
+
+router.patch("/:id/status", validateCustomerStatusUpdate, async (req, res) => {
+  const response = await userService.updateCustomerActiveStatus(
+    req.params.id,
+    req.body.isActive,
+  );
 
   return res.status(response.code).json(response);
 });

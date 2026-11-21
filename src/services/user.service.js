@@ -1,6 +1,7 @@
 import { isValidEmail, isValidPhone } from "../helper/validation.helper.js";
 import bcrypt from "bcrypt";
 import * as userRepository from "../repositories/user.repository.js";
+import * as orderRepository from "../repositories/order.repository.js";
 import * as Response from "../config/response.helper.js";
 
 const allowedRoles = ["customer", "staff", "admin"];
@@ -79,6 +80,44 @@ export const getCustomers = async ({
     console.error("getCustomers service error:", error.message);
 
     return Response.internalServerError("Unable to fetch customers");
+  }
+};
+
+export const getCustomerOrderHistory = async (id) => {
+  const customerId = Number(id);
+
+  if (!Number.isInteger(customerId) || customerId <= 0) {
+    return Response.badRequest("Customer ID must be a positive whole number");
+  }
+
+  try {
+    const customer = await userRepository.findById(customerId);
+
+    if (!customer || customer.role !== "customer") {
+      return Response.notFound("Customer not found");
+    }
+
+    const orders = await orderRepository.findAllByUserId(customerId);
+
+    return Response.success(
+      {
+        customer,
+        orders: orders.map((order) => {
+          return {
+            ...order,
+            total_amount: Number(order.total_amount),
+            deposit_amount: Number(order.deposit_amount),
+          };
+        }),
+      },
+      "Customer order history fetched successfully",
+    );
+  } catch (error) {
+    console.error("getCustomerOrderHistory service error:", error.message);
+
+    return Response.internalServerError(
+      "Unable to fetch customer order history",
+    );
   }
 };
 
@@ -235,6 +274,46 @@ export const updateUser = async (
     console.error("updateUser service error:", error.message);
 
     return Response.internalServerError("Unable to update user");
+  }
+};
+
+export const updateCustomerActiveStatus = async (id, isActive) => {
+  const customerId = Number(id);
+
+  if (!Number.isInteger(customerId) || customerId <= 0) {
+    return Response.badRequest("Customer ID must be a positive whole number");
+  }
+
+  if (typeof isActive !== "boolean") {
+    return Response.badRequest("isActive must be true or false");
+  }
+
+  try {
+    const customer = await userRepository.findById(customerId);
+
+    if (!customer || customer.role !== "customer") {
+      return Response.notFound("Customer not found");
+    }
+
+    if (Boolean(customer.is_active) === isActive) {
+      return Response.success(
+        customer,
+        `Customer is already ${isActive ? "active" : "inactive"}`,
+      );
+    }
+
+    await userRepository.updateActiveStatus(customerId, isActive);
+
+    const updatedCustomer = await userRepository.findById(customerId);
+
+    return Response.success(
+      updatedCustomer,
+      `Customer ${isActive ? "activated" : "deactivated"} successfully`,
+    );
+  } catch (error) {
+    console.error("updateCustomerActiveStatus service error:", error.message);
+
+    return Response.internalServerError("Unable to update customer status");
   }
 };
 

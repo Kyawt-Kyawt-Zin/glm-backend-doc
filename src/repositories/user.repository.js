@@ -253,6 +253,30 @@ export const update = async (
   }
 };
 
+export const updateActiveStatus = async (id, isActive) => {
+  let connection;
+
+  try {
+    connection = await pool.getConnection();
+
+    const [result] = await connection.query(
+      `UPDATE users
+      SET is_active = ?
+      WHERE id = ?`,
+      [isActive ? 1 : 0, id],
+    );
+
+    return result.affectedRows > 0;
+  } catch (error) {
+    console.error("update user active status error:", error.message);
+    throw error;
+  } finally {
+    if (connection) {
+      connection.release();
+    }
+  }
+};
+
 export const deactivate = async (id) => {
   let connection;
 
