@@ -35,6 +35,62 @@ export const findPendingDeposits = async () => {
   return rows;
 };
 
+export const findPaymentByIdForManagement = async (paymentId) => {
+  const [rows] = await pool.execute(
+    `
+      SELECT
+        payments.id,
+        payments.order_id,
+        payments.payment_type,
+        payments.payment_method,
+        payments.amount,
+        payments.status AS payment_record_status,
+        payments.transaction_reference,
+        payments.notes,
+        payments.confirmed_at,
+        payments.refund_amount,
+        payments.refund_reference,
+        payments.refund_notes,
+        payments.refunded_at,
+        payments.created_at,
+        payments.updated_at,
+
+        CASE
+          WHEN payments.payment_proof_path IS NULL THEN FALSE
+          ELSE TRUE
+        END AS has_payment_proof,
+
+        orders.order_number,
+        orders.fulfillment_type,
+        orders.status AS order_status,
+        orders.payment_status,
+        orders.delivery_method,
+        orders.delivery_zone_name,
+        orders.total_amount,
+
+        users.full_name AS customer_name,
+        users.email AS customer_email,
+        users.phone AS customer_phone,
+
+        confirming_staff.full_name AS confirmed_by_name,
+        refund_staff.full_name AS refunded_by_name
+
+      FROM payments
+      INNER JOIN orders ON orders.id = payments.order_id
+      INNER JOIN users ON users.id = orders.user_id
+      LEFT JOIN users AS confirming_staff
+        ON confirming_staff.id = payments.confirmed_by
+      LEFT JOIN users AS refund_staff
+        ON refund_staff.id = payments.refunded_by
+      WHERE payments.id = ?
+      LIMIT 1
+    `,
+    [paymentId],
+  );
+
+  return rows[0] || null;
+};
+
 export const findDepositByIdForUpdate = async (connection, paymentId) => {
   const [rows] = await connection.execute(
     `
@@ -171,13 +227,7 @@ export const completeRefund = async ({
         refund_notes = ?
       WHERE id = ?
     `,
-    [
-      refundAmount,
-      refundReference,
-      refundedBy,
-      refundNotes,
-      paymentId,
-    ],
+    [refundAmount, refundReference, refundedBy, refundNotes, paymentId],
   );
 };
 

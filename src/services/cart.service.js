@@ -206,3 +206,30 @@ export const removeMyCartItem = async (userId, itemId) => {
     return Response.internalServerError("Unable to remove cart item");
   }
 };
+
+export const clearMyCart = async (userId) => {
+  try {
+    const cart = await cartRepository.findActiveCartByUserId(userId);
+
+    if (!cart) {
+      return Response.success(
+        await buildCartData(null),
+        "Your cart is already empty",
+      );
+    }
+
+    await cartRepository.deleteAllCartItemsByCartId(cart.id);
+
+    await cartRepository.deleteActiveCartById(cart.id);
+
+    return Response.success(
+      await buildCartData(null),
+      "Cart cleared successfully",
+    );
+    
+  } catch (error) {
+    console.error("clearMyCart service error:", error.message);
+
+    return Response.internalServerError("Unable to clear your cart");
+  }
+};

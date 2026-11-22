@@ -25,6 +25,38 @@ export const getPendingDepositPayments = async () => {
   }
 };
 
+export const getPaymentDetailsForManagement = async (paymentId) => {
+  if (!isPositiveInteger(paymentId)) {
+    return Response.badRequest("A valid payment ID is required");
+  }
+
+  try {
+    const payment = await paymentRepository.findPaymentByIdForManagement(
+      paymentId,
+    );
+
+    if (!payment) {
+      return Response.notFound("Payment not found");
+    }
+
+    return Response.success(
+      {
+        ...payment,
+        amount: Number(payment.amount),
+        total_amount: Number(payment.total_amount),
+        refund_amount:
+          payment.refund_amount === null ? null : Number(payment.refund_amount),
+        has_payment_proof: Boolean(payment.has_payment_proof),
+      },
+      "Payment details fetched successfully",
+    );
+  } catch (error) {
+    console.error("getPaymentDetailsForManagement service error:", error.message);
+
+    return Response.internalServerError("Unable to fetch payment details");
+  }
+};
+
 export const confirmPreorderDeposit = async (staffUserId, paymentId, body) => {
   const transactionReference = String(body?.transactionReference || "").trim();
 

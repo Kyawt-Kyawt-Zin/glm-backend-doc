@@ -148,6 +148,27 @@ export const deleteCartItem = async (itemId) => {
   );
 };
 
+export const deleteAllCartItemsByCartId = async (cartId) => {
+  const [result] = await pool.execute(
+    `DELETE FROM cart_items
+    WHERE cart_id = ?`,
+    [cartId],
+  );
+
+  return result.affectedRows;
+};
+
+export const deleteActiveCartById = async (cartId) => {
+  const [result] = await pool.execute(
+    `DELETE FROM carts
+    WHERE id = ?
+      AND status = 'active'`,
+    [cartId],
+  );
+
+  return result.affectedRows > 0;
+};
+
 export const findAvailableVariantById = async (variantId) => {
   const [variants] = await pool.execute(
     `SELECT

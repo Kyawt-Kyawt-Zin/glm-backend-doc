@@ -1,5 +1,6 @@
 import { Router } from "express";
 import * as paymentService from "../services/payment.service.js";
+import { validatePaymentIdParam } from "../validators/payment.validator.js";
 import { authenticate } from "../middlewares/auth.middleware.js";
 import { authorizeRoles } from "../middlewares/authorization.middleware.js";
 
@@ -25,6 +26,14 @@ router.patch("/:paymentId/confirm", async (req, res) => {
 
 router.get("/refund-pending", async (req, res) => {
   const response = await paymentService.getRefundPendingPayments();
+
+  return res.status(response.code).json(response);
+});
+
+router.get("/:paymentId", validatePaymentIdParam, async (req, res) => {
+  const response = await paymentService.getPaymentDetailsForManagement(
+    Number(req.params.paymentId),
+  );
 
   return res.status(response.code).json(response);
 });
