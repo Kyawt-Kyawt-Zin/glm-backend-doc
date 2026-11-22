@@ -199,6 +199,15 @@ export const removeMyCartItem = async (userId, itemId) => {
     const cart = await cartRepository.findActiveCartByUserId(userId);
     const cartData = await buildCartData(cart);
 
+    if (cartData.items.length === 0) {
+      await cartRepository.deleteActiveCartById(cart.id);
+
+      return Response.success(
+        await buildCartData(null),
+        "Cart item removed successfully",
+      );
+    }
+
     return Response.success(cartData, "Cart item removed successfully");
   } catch (error) {
     console.error("removeMyCartItem service error:", error.message);
@@ -226,7 +235,6 @@ export const clearMyCart = async (userId) => {
       await buildCartData(null),
       "Cart cleared successfully",
     );
-    
   } catch (error) {
     console.error("clearMyCart service error:", error.message);
 

@@ -12,7 +12,7 @@ import orderChangeRequestController from "./order-change-request.controller.js";
 import paymentController from "./payment.controller.js";
 import feedbackController from "./feedback.controller.js";
 import dashboardController from "./dashboard.controller.js";
-
+import bankAccountController from "./bank-account.controller.js";
 
 const router = Router();
 
@@ -29,5 +29,6 @@ router.use("/order-change-requests", orderChangeRequestController);
 router.use("/payments", paymentController);
 router.use("/feedback", feedbackController);
 router.use("/dashboard", dashboardController);
+router.use("/bank-accounts", bankAccountController);
 
 export default router;
