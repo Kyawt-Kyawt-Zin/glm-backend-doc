@@ -57,7 +57,7 @@ export const getOverviewStats = async () => {
         INNER JOIN orders
           ON orders.id = payments.order_id
         WHERE payments.payment_type = 'deposit'
-          AND payments.status = 'pending'
+          AND payments.status = 'submitted'
           AND orders.status <> 'cancelled'
       ) AS pending_deposits,
 
@@ -144,20 +144,24 @@ export const getLowStockVariants = async (threshold) => {
   return variants;
 };
 
-export const getOrderActivityLastSevenDays = async () => {
-  const [rows] = await pool.execute(`
-    SELECT
+export const getOrderActivityByStatusForWeek = async (weekStart) => {
+  const [rows] = await pool.execute(
+    `SELECT
       DATE_FORMAT(created_at, '%Y-%m-%d') AS activity_date,
+      status,
       COUNT(*) AS order_count
     FROM orders
-    WHERE created_at >= CURDATE() - INTERVAL 6 DAY
-    GROUP BY activity_date
-    ORDER BY activity_date ASC
-  `);
+    WHERE created_at >= ?
+      AND created_at < DATE_ADD(?, INTERVAL 7 DAY)
+    GROUP BY activity_date, status
+    ORDER BY activity_date ASC, status ASC`,
+    [weekStart, weekStart],
+  );
 
   return rows.map((row) => ({
     date: row.activity_date,
-    order_count: row.order_count,
+    status: row.status,
+    order_count: Number(row.order_count),
   }));
 };
 

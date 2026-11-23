@@ -4,3 +4,4 @@ uploads/
 src/config/dbConnect.js
 # Local database recovery copies
 database/backups/
+/storage/

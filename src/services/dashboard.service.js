@@ -46,29 +46,44 @@ const formatDateKey = (date) => {
   return `${year}-${month}-${day}`;
 };
 
-const formatOrderActivity = (rows) => {
-  const countByDate = new Map(
-    rows.map((row) => [row.date, Number(row.order_count)]),
-  );
-
+const getCurrentWeekStart = () => {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+  today.setDate(today.getDate() - 6);
 
-  const activity = [];
+  return formatDateKey(today);
+};
 
-  for (let daysAgo = 6; daysAgo >= 0; daysAgo -= 1) {
-    const date = new Date(today);
-    date.setDate(today.getDate() - daysAgo);
+const getDateFromKey = (dateKey) => {
+  const [year, month, day] = dateKey.split("-").map(Number);
+
+  return new Date(year, month - 1, day);
+};
+
+const formatOrderActivityByStatus = (rows, weekStart) => {
+  const countByDateAndStatus = new Map(
+    rows.map((row) => [
+      `${row.date}:${row.status}`,
+      Number(row.order_count),
+    ]),
+  );
+
+  const startDate = getDateFromKey(weekStart);
+
+  return Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(startDate);
+    date.setDate(startDate.getDate() + index);
 
     const dateKey = formatDateKey(date);
 
-    activity.push({
-      date: dateKey,
-      order_count: countByDate.get(dateKey) || 0,
-    });
-  }
-
-  return activity;
+    return chartStatusDefinitions.reduce(
+      (activityDay, { status }) => ({
+        ...activityDay,
+        [status]: countByDateAndStatus.get(`${dateKey}:${status}`) || 0,
+      }),
+      { date: dateKey },
+    );
+  });
 };
 
 const formatOrderStatusCounts = (rows) => {
@@ -159,16 +174,27 @@ export const getLowStockVariants = async (threshold) => {
   }
 };
 
-export const getDashboardAnalytics = async () => {
+export const getDashboardAnalytics = async (weekStart) => {
+  const normalizedWeekStart = weekStart || getCurrentWeekStart();
+
   try {
     const [activityRows, statusRows] = await Promise.all([
-      dashboardRepository.getOrderActivityLastSevenDays(),
+      dashboardRepository.getOrderActivityByStatusForWeek(normalizedWeekStart),
       dashboardRepository.getOrderStatusCounts(),
     ]);
 
+    const weekEndDate = getDateFromKey(normalizedWeekStart);
+    weekEndDate.setDate(weekEndDate.getDate() + 6);
+
     return Response.success(
       {
-        order_activity: formatOrderActivity(activityRows),
+        week_start: normalizedWeekStart,
+        week_end: formatDateKey(weekEndDate),
+        status_definitions: chartStatusDefinitions,
+        order_activity: formatOrderActivityByStatus(
+          activityRows,
+          normalizedWeekStart,
+        ),
         order_statuses: formatOrderStatusCounts(statusRows),
       },
       "Dashboard analytics fetched successfully",

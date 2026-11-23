@@ -2,6 +2,7 @@ import { Router } from "express";
 import * as dashboardService from "../services/dashboard.service.js";
 import { authenticate } from "../middlewares/auth.middleware.js";
 import { authorizeRoles } from "../middlewares/authorization.middleware.js";
+import { validateAnalyticsWeekQuery } from "../validators/dashboard.validator.js";
 
 const router = Router();
 
@@ -20,8 +21,11 @@ router.get(
   "/analytics",
   authenticate,
   authorizeRoles("admin", "staff"),
+  validateAnalyticsWeekQuery,
   async (req, res) => {
-    const response = await dashboardService.getDashboardAnalytics();
+    const response = await dashboardService.getDashboardAnalytics(
+      req.query.weekStart,
+    );
 
     return res.status(response.code).json(response);
   },

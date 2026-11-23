@@ -26,7 +26,7 @@ export const findPendingDeposits = async () => {
       INNER JOIN orders ON orders.id = payments.order_id
       INNER JOIN users ON users.id = orders.user_id
       WHERE payments.payment_type = 'deposit'
-        AND payments.status = 'pending'
+        AND payments.status = 'submitted'
         AND orders.status <> 'cancelled'
       ORDER BY payments.created_at ASC
     `,
@@ -45,6 +45,7 @@ export const findPaymentByIdForManagement = async (paymentId) => {
         payments.payment_method,
         payments.amount,
         payments.status AS payment_record_status,
+        payments.payment_proof_path,
         payments.transaction_reference,
         payments.notes,
         payments.confirmed_at,
@@ -101,6 +102,7 @@ export const findDepositByIdForUpdate = async (connection, paymentId) => {
         payments.payment_method,
         payments.amount,
         payments.status AS payment_record_status,
+        payments.payment_proof_path,
 
         orders.fulfillment_type,
         orders.status AS order_status,
@@ -114,6 +116,59 @@ export const findDepositByIdForUpdate = async (connection, paymentId) => {
   );
 
   return rows[0] || null;
+};
+
+export const findCustomerDepositByIdForUpdate = async (
+  connection,
+  paymentId,
+  userId,
+) => {
+  const [rows] = await connection.execute(
+    `
+      SELECT
+        payments.id,
+        payments.order_id,
+        payments.payment_type,
+        payments.payment_method,
+        payments.amount,
+        payments.status AS payment_record_status,
+        payments.payment_proof_path,
+
+        orders.order_number,
+        orders.fulfillment_type,
+        orders.status AS order_status,
+        orders.payment_status
+      FROM payments
+      INNER JOIN orders
+        ON orders.id = payments.order_id
+      WHERE payments.id = ?
+        AND orders.user_id = ?
+      LIMIT 1
+      FOR UPDATE
+    `,
+    [paymentId, userId],
+  );
+
+  return rows[0] || null;
+};
+
+export const submitDepositProof = async ({
+  connection,
+  paymentId,
+  transactionReference,
+  paymentProofPath,
+}) => {
+  await connection.execute(
+    `
+      UPDATE payments
+      SET
+        status = 'submitted',
+        transaction_reference = ?,
+        payment_proof_path = ?
+      WHERE id = ?
+    `,
+    [transactionReference, paymentProofPath, paymentId],
+  );
 };
 
 export const confirmDeposit = async ({

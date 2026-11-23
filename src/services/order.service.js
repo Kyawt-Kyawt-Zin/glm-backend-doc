@@ -209,8 +209,9 @@ const createOrderWithItems = async ({
     }
   }
 
+  let depositPaymentId = null;
   if (isPreorder) {
-    await orderRepository.createPayment(connection, {
+    depositPaymentId = await orderRepository.createPayment(connection, {
       orderId,
       paymentType: "deposit",
       paymentMethod: "bank_transfer",
@@ -241,6 +242,7 @@ const createOrderWithItems = async ({
     fulfillment_type: fulfillmentType,
     total_amount: totalAmount,
     deposit_amount: depositAmount,
+    deposit_payment_id: depositPaymentId,
     estimated_ready_date: estimatedReadyDate,
   };
 };
