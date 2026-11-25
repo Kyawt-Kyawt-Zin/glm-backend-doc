@@ -1,5 +1,36 @@
 import pool from "../helper/db_helper.js";
 
+export const removeS3ImageFromProduct = async (productId, imageId) => {
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    const [products] = await connection.execute("SELECT id FROM products WHERE id = ? FOR UPDATE", [productId]);
+    if (!products.length) { await connection.rollback(); return false; }
+    const [images] = await connection.execute(
+      "SELECT id, is_primary FROM product_images WHERE id = ? AND product_id = ? AND media_driver = 's3' FOR UPDATE",
+      [imageId, productId],
+    );
+    if (!images.length) { await connection.rollback(); return false; }
+    await connection.execute("DELETE FROM product_images WHERE id = ? AND product_id = ?", [imageId, productId]);
+    if (images[0].is_primary) {
+      const [remaining] = await connection.execute(
+        "SELECT id FROM product_images WHERE product_id = ? ORDER BY is_primary DESC, sort_order ASC, id ASC LIMIT 1 FOR UPDATE",
+        [productId],
+      );
+      if (remaining.length) {
+        await connection.execute("UPDATE product_images SET is_primary = CASE WHEN id = ? THEN 1 ELSE 0 END WHERE product_id = ?", [remaining[0].id, productId]);
+      }
+    }
+    await connection.commit();
+    return true;
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+};
+
 export const findAllByProductId = async (productId) => {
   const [images] = await pool.execute(
     `SELECT
@@ -7,6 +38,8 @@ export const findAllByProductId = async (productId) => {
       product_id,
       product_variant_id,
       image_path,
+      media_driver,
+      storage_key,
       alt_text,
       sort_order,
       is_primary,
@@ -27,6 +60,8 @@ export const findById = async (id) => {
       product_id,
       product_variant_id,
       image_path,
+      media_driver,
+      storage_key,
       alt_text,
       sort_order,
       is_primary,
@@ -53,6 +88,8 @@ export const createImage = async ({
   productId,
   productVariantId,
   imagePath,
+  mediaDriver = "local",
+  storageKey = null,
   altText,
   sortOrder,
   isPrimary,
@@ -62,15 +99,19 @@ export const createImage = async ({
       product_id,
       product_variant_id,
       image_path,
+      media_driver,
+      storage_key,
       alt_text,
       sort_order,
       is_primary
     )
-    VALUES (?, ?, ?, ?, ?, ?)`,
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       productId,
       productVariantId,
       imagePath,
+      mediaDriver,
+      storageKey,
       altText || null,
       sortOrder || 0,
       isPrimary ? 1 : 0,

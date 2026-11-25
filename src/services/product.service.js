@@ -1,6 +1,23 @@
 import * as productRepository from "../repositories/product.repository.js";
 import * as Response from "../config/response.helper.js";
 import * as categoryRepository from "../repositories/category.repository.js";
+import { resolveCustomerProductImageUrl } from "./product-image-url.service.js";
+
+const resolvePrimaryImage = async (product) => {
+  const { primary_image_driver, primary_image_storage_key, ...productDetails } =
+    product;
+
+  const imageUrl = await resolveCustomerProductImageUrl({
+    imagePath: product.primary_image_path,
+    mediaDriver: primary_image_driver ?? "local",
+    storageKey: primary_image_storage_key,
+  });
+
+  return {
+    ...productDetails,
+    primary_image_path: imageUrl,
+  };
+};
 
 const allowedTargetGenders = ["men", "women", "unisex"];
 
@@ -16,7 +33,14 @@ export const getAllProducts = async () => {
   try {
     const products = await productRepository.findAll();
 
-    return Response.success(products, "Products fetched successfully");
+    const productsWithImageUrls = await Promise.all(
+      products.map(resolvePrimaryImage),
+    );
+
+    return Response.success(
+      productsWithImageUrls,
+      "Products fetched successfully",
+    );
   } catch (error) {
     console.error("getAllProducts service error:", error.message);
 
@@ -101,7 +125,12 @@ export const getProductById = async (id) => {
       return Response.notFound("Product not found");
     }
 
-    return Response.success(product, "Product fetched successfully");
+    const productWithImageUrl = await resolvePrimaryImage(product);
+
+    return Response.success(
+      productWithImageUrl,
+      "Product fetched successfully",
+    );
   } catch (error) {
     console.error("getProductById service error:", error.message);
 

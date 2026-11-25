@@ -5,8 +5,50 @@ import { authenticate } from "../middlewares/auth.middleware.js";
 import { authorizeRoles } from "../middlewares/authorization.middleware.js";
 import * as productImageService from "../services/product-image.service.js";
 import { uploadProductImage } from "../middlewares/upload.middleware.js";
+import * as productImageS3Service from "../services/product-image-s3.service.js";
+import { requireLocalMediaMode } from "../middlewares/require-local-media.middleware.js";
 
 const router = Router();
+
+router.post(
+  "/:productId/images/upload",
+  authenticate,
+  authorizeRoles("admin", "staff"),
+  async (req, res) => {
+    const response = await productImageS3Service.createProductImageUpload({
+      staffUserId: req.user.userId,
+      productId: req.params.productId,
+      variantId: req.body?.variantId,
+      contentType: req.body?.contentType,
+      altText: req.body?.altText,
+      sortOrder: req.body?.sortOrder,
+      isPrimary: req.body?.isPrimary,
+    });
+
+    return res
+      .set("Cache-Control", "private, no-store")
+      .status(response.code)
+      .json(response);
+  },
+);
+
+router.post(
+  "/:productId/images/complete",
+  authenticate,
+  authorizeRoles("admin", "staff"),
+  async (req, res) => {
+    const response = await productImageS3Service.completeProductImageUpload({
+      staffUserId: req.user.userId,
+      productId: req.params.productId,
+      uploadId: req.body?.uploadId,
+    });
+
+    return res
+      .set("Cache-Control", "private, no-store")
+      .status(response.code)
+      .json(response);
+  },
+);
 
 router.get("/", async (req, res) => {
   const response = await productService.getAllProducts();
@@ -37,6 +79,7 @@ router.post(
   "/:productId/images",
   authenticate,
   authorizeRoles("admin", "staff"),
+  requireLocalMediaMode,
   uploadProductImage,
   async (req, res) => {
     const response = await productImageService.uploadProductImage(

@@ -4,6 +4,7 @@ import * as userRepository from "../repositories/user.repository.js";
 import * as Response from "../config/response.helper.js";
 import jwt from "jsonwebtoken";
 import config from "../config/config.js";
+import { deletedEmailMarker, isDeletedEmailMarker, DELETED_EMAIL_DOMAIN } from "../helper/deleted-email.helper.js";
 
 const createSessionData = (user) => {
   const { password_hash, ...safeUser } = user;
@@ -40,6 +41,10 @@ export const registerCustomer = async ({ fullName, email, phone, password }) => 
     return Response.badRequest("Please provide a valid email address.");
   }
 
+  if (cleanEmail.endsWith(`@${DELETED_EMAIL_DOMAIN}`)) {
+    return Response.badRequest("Please provide a valid email address.");
+  }
+
   if (!isValidPhone(cleanPhone)) {
     return Response.badRequest(
       "Phone number must contain 7 to 15 digits and may start with +.",
@@ -51,20 +56,15 @@ export const registerCustomer = async ({ fullName, email, phone, password }) => 
   }
 
   try {
-    const existingUser = await userRepository.findByEmail(cleanEmail);
-
-    if (existingUser) {
-      return Response.conflict("An account with this email already exists");
-    }
-
     const passwordHash = await bcrypt.hash(password, 12);
-    const userId = await userRepository.create({
+    const userId = await userRepository.registerCustomerLocked(deletedEmailMarker(cleanEmail), {
       fullName: cleanFullName,
       email: cleanEmail,
       passwordHash,
       phone: cleanPhone,
       role: "customer",
     });
+    if (!userId) return Response.conflict("This email is already associated with an account and cannot be used to register.");
     const customer = await userRepository.findForLogin(cleanEmail);
 
     if (!customer || customer.id !== userId) {
@@ -95,7 +95,7 @@ export const login = async ({ email, password }) => {
     }
     const user = await userRepository.findForLogin(cleanEmail);
 
-    if (!user) {
+    if (!user || isDeletedEmailMarker(user.email)) {
       return Response.badRequest("Invalid email or password");
     }
 
@@ -116,5 +116,21 @@ export const login = async ({ email, password }) => {
     console.error("login service error:", error.message);
 
     return Response.internalServerError("Unable to log in");
+  }
+};
+
+export const deleteMyAccount = async (userId, password) => {
+  if (typeof password !== "string" || !password) return Response.badRequest("Enter your password to confirm account deletion.");
+  try {
+    const user = await userRepository.getAccountForDeletion(userId);
+    if (!user || user.role !== "customer" || !user.is_active || isDeletedEmailMarker(user.email)) return Response.unauthorized("Account is unavailable.");
+    if (!(await bcrypt.compare(password, user.password_hash))) return Response.badRequest("The password is incorrect.");
+    const outcome = await userRepository.deleteCustomerProfile(user.id, user.email, deletedEmailMarker(user.email), user.password_hash);
+    if (outcome === "active_order") return Response.conflict("You have an active order. Please contact the shop before deleting your account.");
+    if (outcome !== "deleted") return Response.conflict("Your account changed. Please sign in again and retry.");
+    return Response.success(null, "Your customer profile has been deleted.");
+  } catch (error) {
+    console.error("deleteMyAccount service error:", error.message);
+    return Response.internalServerError("Unable to delete your account. Please contact the shop.");
   }
 };

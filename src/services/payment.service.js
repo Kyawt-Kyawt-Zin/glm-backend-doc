@@ -136,7 +136,8 @@ export const getPaymentDetailsForManagement = async (paymentId) => {
       return Response.notFound("Payment not found");
     }
 
-    const { payment_proof_path, ...paymentDetails } = payment;
+    const { payment_proof_path, payment_proof_storage_key, ...paymentDetails } =
+      payment;
 
     return Response.success(
       {
@@ -145,7 +146,9 @@ export const getPaymentDetailsForManagement = async (paymentId) => {
         total_amount: Number(payment.total_amount),
         refund_amount:
           payment.refund_amount === null ? null : Number(payment.refund_amount),
-        has_payment_proof: Boolean(payment_proof_path),
+        has_payment_proof: Boolean(
+          payment_proof_path || payment_proof_storage_key,
+        ),
       },
       "Payment details fetched successfully",
     );
@@ -172,12 +175,27 @@ export const getPaymentProofForManagement = async (paymentId) => {
       return Response.notFound("Payment not found");
     }
 
+    if (payment.payment_proof_driver === "s3") {
+      if (!payment.payment_proof_storage_key) {
+        return Response.notFound("Payment proof not found");
+      }
+
+      return Response.success(
+        {
+          driver: "s3",
+          storageKey: payment.payment_proof_storage_key,
+        },
+        "Payment proof found",
+      );
+    }
+
     if (!payment.payment_proof_path) {
       return Response.notFound("Payment proof not found");
     }
 
     return Response.success(
       {
+        driver: "local",
         filename: payment.payment_proof_path,
       },
       "Payment proof found",
@@ -240,7 +258,7 @@ export const confirmPreorderDeposit = async (staffUserId, paymentId, body) => {
       return Response.conflict("This deposit is not waiting for staff review");
     }
 
-    if (!payment.payment_proof_path) {
+    if (!payment.payment_proof_path && !payment.payment_proof_storage_key) {
       await connection.rollback();
       return Response.badRequest(
         "A customer payment proof is required before confirmation",

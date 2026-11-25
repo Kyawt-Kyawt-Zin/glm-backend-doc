@@ -4,6 +4,7 @@ import * as Response from "../config/response.helper.js";
 import * as productRepository from "../repositories/product.repository.js";
 import * as productImageRepository from "../repositories/product-image.repository.js";
 import * as productVariantRepository from "../repositories/product-variant.repository.js";
+import { resolveCustomerProductImageUrl } from "./product-image-url.service.js";
 
 const removeUploadedFile = async (filePath) => {
   if (!filePath) {
@@ -29,7 +30,27 @@ export const getProductImages = async (productId) => {
 
     const images = await productImageRepository.findAllByProductId(productId);
 
-    return Response.success(images, "Product images fetched successfully");
+    const imagesWithUrls = await Promise.all(
+      images.map(async (image) => {
+        const { media_driver, storage_key, ...imageDetails } = image;
+
+        const imageUrl = await resolveCustomerProductImageUrl({
+          imagePath: image.image_path,
+          mediaDriver: media_driver ?? "local",
+          storageKey: storage_key,
+        });
+
+        return {
+          ...imageDetails,
+          image_path: imageUrl,
+        };
+      }),
+    );
+
+    return Response.success(
+      imagesWithUrls,
+      "Product images fetched successfully",
+    );
   } catch (error) {
     console.error("getProductImages service error:", error.message);
 
@@ -258,6 +279,12 @@ export const deleteProductImage = async (productId, imageId) => {
 
     if (!image || image.product_id !== normalizedProductId) {
       return Response.notFound("Product image not found");
+    }
+
+    if (image.media_driver === "s3") {
+      const removed = await productImageRepository.removeS3ImageFromProduct(normalizedProductId, normalizedImageId);
+      if (!removed) return Response.notFound("Product image not found");
+      return Response.success(null, "Image removed from the product; the stored file is retained");
     }
 
     const imageFilePath = path.join(

@@ -5,8 +5,6 @@ import multer from "multer";
 
 const uploadDirectory = path.join(process.cwd(), "storage", "payment-proofs");
 
-fs.mkdirSync(uploadDirectory, { recursive: true });
-
 const allowedMimeTypes = new Map([
   ["image/jpeg", "jpg"],
   ["image/png", "png"],
@@ -15,7 +13,9 @@ const allowedMimeTypes = new Map([
 
 const storage = multer.diskStorage({
   destination: (req, file, callback) => {
-    callback(null, uploadDirectory);
+    fs.mkdir(uploadDirectory, { recursive: true }, (error) => {
+      callback(error, uploadDirectory);
+    });
   },
 
   filename: (req, file, callback) => {

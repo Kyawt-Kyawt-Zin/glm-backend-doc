@@ -26,7 +26,25 @@ export const findAll = async () => {
           AND product_images.is_primary = 1
           ORDER BY product_images.id ASC
           LIMIT 1
-        ) AS primary_image_path
+        ) AS primary_image_path,
+
+        (
+          SELECT product_images.media_driver
+          FROM product_images
+          WHERE product_images.product_id = products.id
+            AND product_images.is_primary = 1
+          ORDER BY product_images.id ASC
+          LIMIT 1
+        ) AS primary_image_driver,
+
+        (
+          SELECT product_images.storage_key
+          FROM product_images
+          WHERE product_images.product_id = products.id
+            AND product_images.is_primary = 1
+          ORDER BY product_images.id ASC
+          LIMIT 1
+        ) AS primary_image_storage_key
       FROM products
       INNER JOIN categories
         ON products.category_id = categories.id
@@ -97,7 +115,25 @@ export const findById = async (id) => {
           AND product_images.is_primary = 1
           ORDER BY product_images.id ASC
           LIMIT 1
-        ) AS primary_image_path
+        ) AS primary_image_path,
+
+        (
+          SELECT product_images.media_driver
+          FROM product_images
+          WHERE product_images.product_id = products.id
+            AND product_images.is_primary = 1
+          ORDER BY product_images.id ASC
+          LIMIT 1
+        ) AS primary_image_driver,
+
+        (
+          SELECT product_images.storage_key
+          FROM product_images
+          WHERE product_images.product_id = products.id
+            AND product_images.is_primary = 1
+          ORDER BY product_images.id ASC
+          LIMIT 1
+        ) AS primary_image_storage_key
       FROM products
     INNER JOIN categories
       ON products.category_id = categories.id

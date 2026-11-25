@@ -1,4 +1,68 @@
 import pool from "../helper/db_helper.js";
+import { randomBytes } from "node:crypto";
+
+const emailLockName = (marker) => `glm-delete-${marker.slice(0, 48)}`;
+
+export const withEmailLock = async (marker, action) => {
+  const connection = await pool.getConnection();
+  let locked = false;
+  try {
+    const [rows] = await connection.execute("SELECT GET_LOCK(?, 10) AS acquired", [emailLockName(marker)]);
+    if (Number(rows[0].acquired) !== 1) throw new Error("Unable to acquire account lock");
+    locked = true;
+    return await action(connection);
+  } finally {
+    try {
+      if (locked) await connection.execute("SELECT RELEASE_LOCK(?)", [emailLockName(marker)]);
+    } finally {
+      connection.release();
+    }
+  }
+};
+
+export const registerCustomerLocked = async (marker, { fullName, email, passwordHash, phone }) =>
+  withEmailLock(marker, async (connection) => {
+    const [existing] = await connection.execute("SELECT id FROM users WHERE email IN (?, ?) LIMIT 1", [email, marker]);
+    if (existing.length) return null;
+    try {
+      const [result] = await connection.execute(
+        "INSERT INTO users (full_name, email, password_hash, phone, role) VALUES (?, ?, ?, ?, 'customer')",
+        [fullName, email, passwordHash, phone],
+      );
+      return result.insertId;
+    } catch (error) {
+      if (error.code === "ER_DUP_ENTRY") return null;
+      throw error;
+    }
+  });
+
+export const getAccountForDeletion = async (userId) => {
+  const [rows] = await pool.execute("SELECT id, email, role, is_active, password_hash FROM users WHERE id = ? LIMIT 1", [userId]);
+  return rows[0] || null;
+};
+
+export const deleteCustomerProfile = async (userId, email, marker, passwordHash) =>
+  withEmailLock(marker, async (connection) => {
+    await connection.beginTransaction();
+    try {
+      const [users] = await connection.execute("SELECT id FROM users WHERE id = ? AND email = ? AND password_hash = ? AND role = 'customer' AND is_active = 1 FOR UPDATE", [userId, email, passwordHash]);
+      if (!users.length) { await connection.rollback(); return "account_changed"; }
+      const [active] = await connection.execute("SELECT id FROM orders WHERE user_id = ? AND status NOT IN ('delivered', 'picked_up', 'cancelled') LIMIT 1 FOR UPDATE", [userId]);
+      if (active.length) { await connection.rollback(); return "active_order"; }
+      await connection.execute("DELETE ci FROM cart_items ci INNER JOIN carts c ON c.id = ci.cart_id WHERE c.user_id = ?", [userId]);
+      await connection.execute("UPDATE users SET full_name = 'Deleted customer', email = ?, phone = NULL, password_hash = ?, is_active = 0 WHERE id = ?", [marker, randomBytes(48).toString("hex"), userId]);
+      await connection.commit();
+      return "deleted";
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    }
+  });
+
+export const findAuthenticationState = async (userId) => {
+  const [rows] = await pool.execute("SELECT role, is_active, email FROM users WHERE id = ? LIMIT 1", [userId]);
+  return rows[0] || null;
+};
 
 const buildCustomerFilters = ({ search = "", status = "all" }) => {
   const conditions = ["role = 'customer'"];

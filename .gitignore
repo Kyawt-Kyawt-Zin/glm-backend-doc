@@ -5,3 +5,10 @@ src/config/dbConnect.js
 # Local database recovery copies
 database/backups/
 /storage/
+
+# Local environment settings
+.env
+.env.*
+!.env.example
+.vercel
+.env*

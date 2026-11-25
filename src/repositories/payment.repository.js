@@ -46,6 +46,8 @@ export const findPaymentByIdForManagement = async (paymentId) => {
         payments.amount,
         payments.status AS payment_record_status,
         payments.payment_proof_path,
+        payments.payment_proof_driver,
+        payments.payment_proof_storage_key,
         payments.transaction_reference,
         payments.notes,
         payments.confirmed_at,
@@ -57,8 +59,10 @@ export const findPaymentByIdForManagement = async (paymentId) => {
         payments.updated_at,
 
         CASE
-          WHEN payments.payment_proof_path IS NULL THEN FALSE
-          ELSE TRUE
+        WHEN payments.payment_proof_path IS NOT NULL
+        OR payments.payment_proof_storage_key IS NOT NULL
+        THEN TRUE
+        ELSE FALSE
         END AS has_payment_proof,
 
         orders.order_number,
@@ -103,6 +107,8 @@ export const findDepositByIdForUpdate = async (connection, paymentId) => {
         payments.amount,
         payments.status AS payment_record_status,
         payments.payment_proof_path,
+        payments.payment_proof_driver,
+        payments.payment_proof_storage_key,
 
         orders.fulfillment_type,
         orders.status AS order_status,
@@ -133,6 +139,8 @@ export const findCustomerDepositByIdForUpdate = async (
         payments.amount,
         payments.status AS payment_record_status,
         payments.payment_proof_path,
+        payments.payment_proof_driver,
+        payments.payment_proof_storage_key,
 
         orders.order_number,
         orders.fulfillment_type,
@@ -157,6 +165,8 @@ export const submitDepositProof = async ({
   paymentId,
   transactionReference,
   paymentProofPath,
+  paymentProofDriver = "local",
+  paymentProofStorageKey = null,
 }) => {
   await connection.execute(
     `
@@ -164,10 +174,18 @@ export const submitDepositProof = async ({
       SET
         status = 'submitted',
         transaction_reference = ?,
-        payment_proof_path = ?
+        payment_proof_path = ?,
+        payment_proof_driver = ?,
+        payment_proof_storage_key = ?
       WHERE id = ?
     `,
-    [transactionReference, paymentProofPath, paymentId],
+    [
+      transactionReference,
+      paymentProofPath,
+      paymentProofDriver,
+      paymentProofStorageKey,
+      paymentId,
+    ],
   );
 };
 
@@ -295,4 +313,164 @@ export const setOrderRefunded = async (connection, orderId) => {
     `,
     [orderId],
   );
+};
+
+export const createPaymentProofUpload = async ({
+  connection,
+  id,
+  customerId,
+  paymentId,
+  stagingKey,
+  finalKey,
+  contentType,
+  expiresInSeconds,
+}) => {
+  await connection.execute(
+    `
+      INSERT INTO payment_proof_uploads (
+        id,
+        customer_id,
+        payment_id,
+        staging_key,
+        final_key,
+        content_type,
+        expires_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? SECOND))
+    `,
+    [
+      id,
+      customerId,
+      paymentId,
+      stagingKey,
+      finalKey,
+      contentType,
+      expiresInSeconds,
+    ],
+  );
+};
+
+export const findPaymentProofUploadForUpdate = async ({
+  connection,
+  id,
+  customerId,
+  paymentId,
+}) => {
+  const [rows] = await connection.execute(
+    `
+      SELECT
+        id,
+        customer_id,
+        payment_id,
+        staging_key,
+        staging_version_id,
+        final_key,
+        content_type,
+        status,
+        expires_at,
+        expires_at > UTC_TIMESTAMP() AS is_unexpired
+      FROM payment_proof_uploads
+      WHERE id = ?
+        AND customer_id = ?
+        AND payment_id = ?
+      LIMIT 1
+      FOR UPDATE
+    `,
+    [id, customerId, paymentId],
+  );
+
+  return rows[0] || null;
+};
+
+export const markPaymentProofUploadCompleted = async ({
+  connection,
+  id,
+  customerId,
+  paymentId,
+  stagingVersionId,
+  finalKey,
+}) => {
+  const [result] = await connection.execute(
+    `
+      UPDATE payment_proof_uploads
+      SET
+        status = 'completed',
+        staging_version_id = ?,
+        final_key = ?
+      WHERE id = ?
+        AND customer_id = ?
+        AND payment_id = ?
+        AND status = 'pending'
+    `,
+    [stagingVersionId, finalKey, id, customerId, paymentId],
+  );
+
+  return result.affectedRows;
+};
+
+export const listExpiredPaymentProofUploads = async (limit = 50) => {
+  const batchSize = Math.min(
+    100,
+    Math.max(1, Number.isInteger(limit) ? limit : 50),
+  );
+
+  const [rows] = await pool.execute(
+    `
+      SELECT
+        id,
+        customer_id,
+        payment_id,
+        staging_key,
+        final_key,
+        expires_at
+      FROM payment_proof_uploads
+      WHERE status = 'pending'
+        AND expires_at <= UTC_TIMESTAMP()
+      ORDER BY expires_at ASC
+      LIMIT ?
+    `,
+    [batchSize],
+  );
+
+  return rows;
+};
+
+export const markPaymentProofUploadCleaned = async ({
+  connection,
+  id,
+  customerId,
+  paymentId,
+}) => {
+  const [result] = await connection.execute(
+    `
+      UPDATE payment_proof_uploads
+      SET status = 'cleaned'
+      WHERE id = ?
+        AND customer_id = ?
+        AND payment_id = ?
+        AND status = 'pending'
+        AND expires_at <= UTC_TIMESTAMP()
+    `,
+    [id, customerId, paymentId],
+  );
+
+  return result.affectedRows;
+};
+
+export const findPaymentUsingProofStorageKeyForUpdate = async (
+  connection,
+  storageKey,
+) => {
+  const [rows] = await connection.execute(
+    `
+      SELECT id
+      FROM payments
+      WHERE payment_proof_storage_key = ?
+      LIMIT 1
+      FOR UPDATE
+    `,
+    [storageKey],
+  );
+
+  return rows[0] || null;
 };

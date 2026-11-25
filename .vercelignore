@@ -1,0 +1,13 @@
+/*
+!/src
+!/certs
+!/package.json
+!/package-lock.json
+!/vercel.json
+
+/src/config/dbConnect.js
+/src/**/.env
+/src/**/.env.*
+
+/certs/*
+!/certs/ca.pem

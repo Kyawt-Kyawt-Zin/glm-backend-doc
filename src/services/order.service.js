@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import * as Response from "../config/response.helper.js";
 import * as orderRepository from "../repositories/order.repository.js";
 import * as deliveryZoneRepository from "../repositories/delivery-zone.repository.js";
+import { pickupWindow, validatePickupSelection } from "./pickup-scheduling.js";
 
 const PREORDER_DEPOSIT_PERCENTAGE = 20;
 const PREORDER_TERMS_VERSION = "v1";
@@ -66,21 +67,13 @@ const resolveDeliveryDetails = async (delivery, fulfillmentType) => {
   }
 
   if (deliveryMethod === "pickup") {
-    const pickupTimeSlot = delivery?.pickupTimeSlot?.trim();
-
-    if (!pickupTimeSlot) {
-      return {
-        error: "Pickup time slot is required for pickup orders",
-      };
-    }
-
     return {
       data: {
         deliveryMethod,
         deliveryZoneId: null,
         deliveryZoneName: null,
         deliveryAddress: null,
-        pickupTimeSlot,
+        pickupTimeSlot: null,
         deliveryFee: 0,
         paymentMethod,
       },
@@ -260,6 +253,12 @@ export const checkoutMyCart = async (userId, checkoutData) => {
   try {
     connection = await orderRepository.getCheckoutConnection();
     await connection.beginTransaction();
+
+    const [accountRows] = await connection.execute("SELECT is_active FROM users WHERE id = ? FOR UPDATE", [userId]);
+    if (!accountRows.length || !accountRows[0].is_active) {
+      await connection.rollback();
+      return Response.unauthorized("Account is inactive or unavailable");
+    }
 
     const cart = await orderRepository.findActiveCartForCheckout(
       connection,
@@ -444,6 +443,7 @@ export const getMyOrders = async (userId) => {
           ...order,
           total_amount: Number(order.total_amount),
           deposit_amount: Number(order.deposit_amount),
+          total_item_quantity: Number(order.total_item_quantity),
         };
       }),
       "Orders fetched successfully",
@@ -479,7 +479,12 @@ export const getMyOrderById = async (userId, orderId) => {
 
     return Response.success(
       {
-        order: formatOrderAmounts(order),
+        order: {
+          ...formatOrderAmounts(order),
+          pickup_window: order.delivery_method === "pickup"
+            ? pickupWindow(order.fulfillment_type === "preorder" ? order.pickup_ready_ms : order.pickup_confirmed_ms)
+            : null,
+        },
         items: items.map((item) => {
           return {
             ...item,
@@ -501,6 +506,43 @@ export const getMyOrderById = async (userId, orderId) => {
     console.error("getMyOrderById service error:", error.message);
 
     return Response.internalServerError("Unable to fetch order");
+  }
+};
+
+export const scheduleCustomerPickup = async (userId, orderId, { date, time } = {}) => {
+  if (!isPositiveInteger(orderId)) return Response.badRequest("A valid order ID is required");
+  let connection;
+  try {
+    connection = await orderRepository.getConnection();
+    await connection.beginTransaction();
+    const order = await orderRepository.lockCustomerPickupOrder(connection, Number(orderId), userId);
+    if (!order) {
+      await connection.rollback();
+      return Response.notFound("Order not found");
+    }
+    const allowed = order.delivery_method === "pickup" && (order.fulfillment_type === "preorder"
+      ? order.status === "ready_for_pickup"
+      : ["confirmed", "processing", "ready_for_pickup"].includes(order.status));
+    if (!allowed) {
+      await connection.rollback();
+      return Response.badRequest("Pickup scheduling is not yet available for this order.");
+    }
+    const anchor = order.fulfillment_type === "preorder" ? order.pickup_ready_ms : order.pickup_confirmed_ms;
+    const error = validatePickupSelection(anchor, date, time);
+    if (error) {
+      await connection.rollback();
+      return Response.badRequest(error);
+    }
+    const slot = `${date} · ${time} (Dubai time)`;
+    await orderRepository.updatePickupSlot(connection, order.id, slot);
+    await connection.commit();
+    return Response.success({ pickup_time_slot: slot }, "Pickup time saved successfully");
+  } catch (error) {
+    if (connection) await connection.rollback();
+    console.error("scheduleCustomerPickup service error:", error.message);
+    return Response.internalServerError("Unable to save pickup time");
+  } finally {
+    if (connection) connection.release();
   }
 };
 

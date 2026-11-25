@@ -19,6 +19,11 @@ router.get("/my", async (req, res) => {
   return res.status(response.code).json(response);
 });
 
+router.patch("/my/:orderId/pickup", async (req, res) => {
+  const response = await orderService.scheduleCustomerPickup(req.user.userId, req.params.orderId, req.body);
+  return res.status(response.code).json(response);
+});
+
 router.get("/my/:orderId", async (req, res) => {
   const response = await orderService.getMyOrderById(
     req.user.userId,

@@ -17,6 +17,11 @@ router.post("/login", async (req, res) => {
   return res.status(response.code).json(response);
 });
 
+router.delete("/me", authenticate, async (req, res) => {
+  const response = await authService.deleteMyAccount(req.user.userId, req.body?.password);
+  return res.status(response.code).json(response);
+});
+
 router.get("/me", authenticate, (req, res) => {
   const response = Response.success(
     req.user,

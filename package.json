@@ -15,6 +15,9 @@
   "license": "ISC",
   "type": "module",
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1176.0",
+    "@aws-sdk/s3-presigned-post": "^3.1176.0",
+    "@aws-sdk/s3-request-presigner": "^3.1176.0",
     "bcrypt": "^6.0.0",
     "cors": "^2.8.6",
     "dotenv": "^18.0.3",
@@ -22,7 +25,8 @@
     "express-validator": "^7.3.2",
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.5.0",
-    "mysql2": "^3.24.4"
+    "mysql2": "^3.24.4",
+    "sharp": "^0.35.5"
   },
   "devDependencies": {
     "nodemon": "^3.1.14"

@@ -227,7 +227,33 @@ export const findAllByUserId = async (userId) => {
       total_amount,
       deposit_amount,
       estimated_ready_date,
-      created_at
+      created_at,
+
+      COALESCE(
+        (
+          SELECT SUM(order_items.quantity)
+          FROM order_items
+          WHERE order_items.order_id = orders.id
+        ),
+        0
+      ) AS total_item_quantity,
+
+      (
+        SELECT CONCAT(
+          order_items.product_name,
+          ' · ',
+          order_items.color,
+          ' · ',
+          order_items.size,
+          ' × ',
+          order_items.quantity
+        )
+        FROM order_items
+        WHERE order_items.order_id = orders.id
+        ORDER BY order_items.id ASC
+        LIMIT 1
+      ) AS first_item_summary
+
     FROM orders
     WHERE user_id = ?
     ORDER BY created_at DESC`,
@@ -253,12 +279,17 @@ export const findByIdAndUserId = async (orderId, userId) => {
       recipient_phone,
       delivery_address,
       pickup_time_slot,
+      UNIX_TIMESTAMP(confirmed_at) * 1000 AS pickup_confirmed_ms,
+      (SELECT UNIX_TIMESTAMP(h.created_at) * 1000 FROM order_status_history h
+       WHERE h.order_id = orders.id AND h.new_status = 'ready_for_pickup'
+       ORDER BY h.id DESC LIMIT 1) AS pickup_ready_ms,
       subtotal,
       delivery_fee,
       total_amount,
       deposit_percentage,
       deposit_amount,
       estimated_ready_date,
+      cancellation_deadline,
       created_at,
       updated_at
     FROM orders
@@ -275,6 +306,7 @@ export const findItemsByOrderId = async (orderId) => {
   const [items] = await pool.execute(
     `SELECT
       id,
+      product_variant_id,
       product_name,
       product_slug,
       category_name,
@@ -442,11 +474,28 @@ export const updateOrderStatus = async (
   await executor.execute(
     `
       UPDATE orders
-      SET status = ?
+      SET status = ?, confirmed_at = CASE WHEN ? = 'confirmed' THEN CURRENT_TIMESTAMP ELSE confirmed_at END
       WHERE id = ?
     `,
-    [status, orderId],
+    [status, status, orderId],
   );
+};
+
+export const lockCustomerPickupOrder = async (connection, orderId, userId) => {
+  const [rows] = await connection.execute(
+    `SELECT id, fulfillment_type, delivery_method, status,
+      UNIX_TIMESTAMP(confirmed_at) * 1000 AS pickup_confirmed_ms,
+      (SELECT UNIX_TIMESTAMP(h.created_at) * 1000 FROM order_status_history h
+       WHERE h.order_id = orders.id AND h.new_status = 'ready_for_pickup'
+       ORDER BY h.id DESC LIMIT 1) AS pickup_ready_ms
+     FROM orders WHERE id = ? AND user_id = ? FOR UPDATE`,
+    [orderId, userId],
+  );
+  return rows[0] || null;
+};
+
+export const updatePickupSlot = async (connection, orderId, slot) => {
+  await connection.execute('UPDATE orders SET pickup_time_slot = ? WHERE id = ?', [slot, orderId]);
 };
 
 export const correctOrderStatus = async (

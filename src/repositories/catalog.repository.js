@@ -104,6 +104,24 @@ export const findAllForCatalog = async ({
         ) AS primary_image_path,
 
         (
+          SELECT product_images.media_driver
+          FROM product_images
+          WHERE product_images.product_id = products.id
+            AND product_images.is_primary = TRUE
+          ORDER BY product_images.id ASC
+          LIMIT 1
+        ) AS primary_image_driver,
+
+        (
+          SELECT product_images.storage_key
+          FROM product_images
+          WHERE product_images.product_id = products.id
+            AND product_images.is_primary = TRUE
+          ORDER BY product_images.id ASC
+          LIMIT 1
+        ) AS primary_image_storage_key,
+
+        (
           SELECT MIN(product_variants.price)
           FROM product_variants
           WHERE product_variants.product_id = products.id
@@ -197,6 +215,8 @@ export const findOneForCatalogBySlug = async (slug) => {
         id,
         product_variant_id,
         image_path,
+        media_driver,
+        storage_key,
         alt_text,
         sort_order,
         is_primary

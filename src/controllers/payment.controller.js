@@ -10,6 +10,9 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import * as Response from "../config/response.helper.js";
 import uploadPaymentProof from "../middlewares/payment-proof-upload.middleware.js";
+import { createPrivateViewUrl } from "../services/s3-media.service.js";
+import * as paymentProofS3Service from "../services/payment-proof-s3.service.js";
+import { requireLocalMediaMode } from "../middlewares/require-local-media.middleware.js";
 
 const router = Router();
 
@@ -30,6 +33,7 @@ const uploadSinglePaymentProof = (req, res, next) => {
 router.post(
   "/:paymentId/proof",
   validatePaymentIdParam,
+  requireLocalMediaMode,
   uploadSinglePaymentProof,
   validatePaymentProofSubmission,
   async (req, res) => {
@@ -50,6 +54,41 @@ router.post(
   },
 );
 
+router.post(
+  "/:paymentId/proof/upload",
+  validatePaymentIdParam,
+  async (req, res) => {
+    const response = await paymentProofS3Service.createCustomerProofUpload({
+      userId: req.user.userId,
+      paymentId: Number(req.params.paymentId),
+      contentType: req.body?.contentType,
+    });
+
+    return res
+      .set("Cache-Control", "private, no-store")
+      .status(response.code)
+      .json(response);
+  },
+);
+
+router.post(
+  "/:paymentId/proof/complete",
+  validatePaymentIdParam,
+  async (req, res) => {
+    const response = await paymentProofS3Service.completeCustomerProofUpload({
+      userId: req.user.userId,
+      paymentId: Number(req.params.paymentId),
+      uploadId: req.body?.uploadId,
+      transactionReference: req.body?.transactionReference,
+    });
+
+    return res
+      .set("Cache-Control", "private, no-store")
+      .status(response.code)
+      .json(response);
+  },
+);
+
 router.use(authorizeRoles("admin", "staff"));
 
 const paymentProofDirectory = path.join(
@@ -65,6 +104,29 @@ router.get("/:paymentId/proof", validatePaymentIdParam, async (req, res) => {
 
   if (response.code >= 400) {
     return res.status(response.code).json(response);
+  }
+
+  if (response.data.driver === "s3") {
+    try {
+      const viewUrl = await createPrivateViewUrl({
+        key: response.data.storageKey,
+      });
+
+      return res
+        .set("Cache-Control", "private, no-store")
+        .json({ url: viewUrl });
+    } catch (error) {
+      console.error(
+        "Unable to create payment proof viewing link:",
+        error.message,
+      );
+
+      const errorResponse = Response.internalServerError(
+        "Unable to load payment proof",
+      );
+
+      return res.status(errorResponse.code).json(errorResponse);
+    }
   }
 
   const filename = path.basename(response.data.filename);
