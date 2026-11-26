@@ -10,16 +10,9 @@ const buildCatalogFilters = ({
     "categories.is_active = TRUE",
     `EXISTS (
       SELECT 1
-      FROM product_variants AS sellable_variants
-      WHERE sellable_variants.product_id = products.id
-        AND sellable_variants.is_active = TRUE
-        AND (
-          sellable_variants.fulfillment_type = 'preorder'
-          OR (
-            sellable_variants.fulfillment_type = 'in_stock'
-            AND sellable_variants.stock_quantity > 0
-          )
-        )
+      FROM product_variants AS active_variants
+      WHERE active_variants.product_id = products.id
+        AND active_variants.is_active = TRUE
     )`,
   ];
 
@@ -187,16 +180,9 @@ export const findOneForCatalogBySlug = async (slug) => {
         AND categories.is_active = TRUE
         AND EXISTS (
           SELECT 1
-          FROM product_variants AS sellable_variants
-          WHERE sellable_variants.product_id = products.id
-            AND sellable_variants.is_active = TRUE
-            AND (
-              sellable_variants.fulfillment_type = 'preorder'
-              OR (
-                sellable_variants.fulfillment_type = 'in_stock'
-                AND sellable_variants.stock_quantity > 0
-              )
-            )
+          FROM product_variants AS active_variants
+          WHERE active_variants.product_id = products.id
+            AND active_variants.is_active = TRUE
         )
       LIMIT 1
     `,
@@ -241,14 +227,7 @@ export const findOneForCatalogBySlug = async (slug) => {
         deposit_percentage
       FROM product_variants
       WHERE product_id = ?
-        AND is_active = TRUE
-        AND (
-          fulfillment_type = 'preorder'
-          OR (
-            fulfillment_type = 'in_stock'
-            AND stock_quantity > 0
-          )
-        )
+      AND is_active = TRUE
       ORDER BY
         color ASC,
         size ASC,
