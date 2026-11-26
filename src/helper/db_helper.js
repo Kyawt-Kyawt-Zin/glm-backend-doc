@@ -32,8 +32,6 @@ const verifyConnection = async () => {
     console.log("Database server:", rows[0].server);
 
     console.log("MySQL database connected successfully.");
-    const [tables] = await connection.query("SHOW TABLES");
-    console.log("Aiven tables:", tables);
   } catch (error) {
     console.error("Database connection error:", error.message);
     process.exit(1);
