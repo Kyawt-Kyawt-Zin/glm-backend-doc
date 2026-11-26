@@ -64,6 +64,15 @@ export const findAuthenticationState = async (userId) => {
   return rows[0] || null;
 };
 
+export const updateOwnCustomerProfile = async (userId, { fullName, phone }) => {
+  const [result] = await pool.execute(
+    `UPDATE users SET full_name = ?, phone = ?
+     WHERE id = ? AND role = 'customer' AND is_active = TRUE`,
+    [fullName, phone || null, userId],
+  );
+  return result.affectedRows > 0;
+};
+
 const buildCustomerFilters = ({ search = "", status = "all" }) => {
   const conditions = ["role = 'customer'"];
   const values = [];

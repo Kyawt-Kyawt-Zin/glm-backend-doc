@@ -59,6 +59,11 @@ router.post("/login", async (req, res) => {
   return sendCustomerAuthResponse(req, res, response);
 });
 
+router.patch("/me", authenticate, async (req, res) => {
+  const response = await authService.updateMyProfile(req.user.userId, req.user.role, req.body);
+  return res.status(response.code).json(response);
+});
+
 router.delete("/me", authenticate, async (req, res) => {
   const response = await authService.deleteMyAccount(
     req.user.userId,

@@ -260,7 +260,34 @@ export const findAllByUserId = async (userId) => {
     [userId],
   );
 
-  return orders;
+  if (orders.length === 0) {
+    return orders;
+  }
+
+  // Read the purchase-time snapshots for this customer in one query, so the
+  // list remains recognizable even if products or variants later change.
+  const [items] = await pool.execute(
+    `SELECT order_items.order_id, order_items.product_name, order_items.color,
+            order_items.size, order_items.quantity
+     FROM order_items
+     INNER JOIN orders ON orders.id = order_items.order_id
+     WHERE orders.user_id = ?
+     ORDER BY order_items.order_id, order_items.id`,
+    [userId],
+  );
+
+  const itemsByOrder = new Map();
+  for (const item of items) {
+    const key = String(item.order_id);
+    if (!itemsByOrder.has(key)) itemsByOrder.set(key, []);
+    const { order_id, ...snapshot } = item;
+    itemsByOrder.get(key).push(snapshot);
+  }
+
+  return orders.map((order) => ({
+    ...order,
+    items: itemsByOrder.get(String(order.id)) || [],
+  }));
 };
 
 export const findByIdAndUserId = async (orderId, userId) => {

@@ -119,6 +119,35 @@ export const login = async ({ email, password }) => {
   }
 };
 
+export const updateMyProfile = async (userId, role, data = {}) => {
+  if (role !== "customer") return Response.forbidden("Customer account required.");
+  if (!data || typeof data.fullName !== "string" || typeof data.phone !== "string") {
+    return Response.badRequest("Enter your name and phone number.");
+  }
+
+  const fullName = data.fullName.trim();
+  const phone = data.phone.trim();
+  if (!fullName || fullName.length > 100) {
+    return Response.badRequest("Enter a name of 1 to 100 characters.");
+  }
+  if (!isValidPhone(phone)) {
+    return Response.badRequest("Phone number must contain 7 to 15 digits and may start with +.");
+  }
+
+  try {
+    const updated = await userRepository.updateOwnCustomerProfile(userId, { fullName, phone });
+    if (!updated) return Response.unauthorized("Account is unavailable.");
+    const user = await userRepository.findById(userId);
+    if (!user || !user.is_active || user.role !== "customer" || isDeletedEmailMarker(user.email)) {
+      return Response.unauthorized("Account is unavailable.");
+    }
+    return Response.success(user, "Profile updated successfully.");
+  } catch (error) {
+    console.error("updateMyProfile service error:", error.message);
+    return Response.internalServerError("Unable to update your profile.");
+  }
+};
+
 export const deleteMyAccount = async (userId, password) => {
   if (typeof password !== "string" || !password) return Response.badRequest("Enter your password to confirm account deletion.");
   try {
