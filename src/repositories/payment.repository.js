@@ -187,6 +187,17 @@ export const submitDepositProof = async ({
       paymentId,
     ],
   );
+  // Keep the order-level summary aligned with the submitted payment. Do not
+  // overwrite a later state such as confirmed or refunded.
+  await connection.execute(
+    `UPDATE orders AS o
+     INNER JOIN payments AS p ON p.order_id = o.id
+     SET o.payment_status = 'deposit_submitted'
+     WHERE p.id = ? AND p.payment_type = 'deposit'
+       AND o.fulfillment_type = 'preorder'
+       AND o.payment_status = 'deposit_pending'`,
+    [paymentId],
+  );
 };
 
 export const confirmDeposit = async ({

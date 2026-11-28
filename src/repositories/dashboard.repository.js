@@ -1,5 +1,34 @@
 import pool from "../helper/db_helper.js";
 
+export const getConfirmedPreorderItems = async () => {
+  const [rows] = await pool.execute(`
+    SELECT orders.id AS order_id, orders.order_number, orders.confirmed_at,
+           order_items.id AS order_item_id, order_items.product_name,
+           order_items.color, order_items.size, order_items.sku, order_items.quantity,
+           order_items.preorder_received_quantity
+    FROM orders
+    INNER JOIN order_items ON order_items.order_id = orders.id
+    WHERE orders.fulfillment_type = 'preorder' AND orders.status = 'confirmed'
+    ORDER BY orders.confirmed_at ASC, orders.id ASC, order_items.id ASC
+  `);
+  return rows;
+};
+
+export const getReceivedPreorderItems = async () => {
+  const [rows] = await pool.execute(`
+    SELECT orders.id AS order_id, orders.order_number, order_items.id AS order_item_id,
+           order_items.product_name, order_items.color, order_items.size,
+           order_items.quantity, order_items.preorder_received_quantity
+    FROM orders
+    INNER JOIN order_items ON order_items.order_id = orders.id
+    WHERE orders.fulfillment_type = 'preorder'
+      AND orders.status IN ('confirmed', 'processing', 'ready_for_delivery', 'ready_for_pickup')
+      AND order_items.preorder_received_quantity > 0
+    ORDER BY orders.id ASC, order_items.id ASC
+  `);
+  return rows;
+};
+
 export const getOverviewStats = async () => {
   const [rows] = await pool.execute(`
     SELECT

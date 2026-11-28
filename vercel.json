@@ -1,7 +1,9 @@
 {
+  "crons": [{ "path": "/api/cron/retry-order-emails", "schedule": "0 3 * * *" }],
   "functions": {
     "src/app.js": {
-      "includeFiles": "certs/ca.pem"
+      "includeFiles": "certs/ca.pem",
+      "maxDuration": 60
     }
   }
 }

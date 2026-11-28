@@ -1,5 +1,6 @@
 import pool from "../helper/db_helper.js";
 import { randomBytes } from "node:crypto";
+import { enqueueWelcomeEmail } from "../services/email-queue.service.js";
 
 const emailLockName = (marker) => `glm-delete-${marker.slice(0, 48)}`;
 
@@ -25,12 +26,16 @@ export const registerCustomerLocked = async (marker, { fullName, email, password
     const [existing] = await connection.execute("SELECT id FROM users WHERE email IN (?, ?) LIMIT 1", [email, marker]);
     if (existing.length) return null;
     try {
+      await connection.beginTransaction();
       const [result] = await connection.execute(
         "INSERT INTO users (full_name, email, password_hash, phone, role) VALUES (?, ?, ?, ?, 'customer')",
         [fullName, email, passwordHash, phone],
       );
-      return result.insertId;
+      const emailJobId = await enqueueWelcomeEmail(connection, result.insertId);
+      await connection.commit();
+      return { userId: result.insertId, emailJobId };
     } catch (error) {
+      await connection.rollback();
       if (error.code === "ER_DUP_ENTRY") return null;
       throw error;
     }
@@ -49,6 +54,9 @@ export const deleteCustomerProfile = async (userId, email, marker, passwordHash)
       if (!users.length) { await connection.rollback(); return "account_changed"; }
       const [active] = await connection.execute("SELECT id FROM orders WHERE user_id = ? AND status NOT IN ('delivered', 'picked_up', 'cancelled') LIMIT 1 FOR UPDATE", [userId]);
       if (active.length) { await connection.rollback(); return "active_order"; }
+      const [drafts] = await connection.execute("SELECT id FROM preorder_checkout_drafts WHERE user_id = ? AND status = 'pending' LIMIT 1 FOR UPDATE", [userId]);
+      if (drafts.length) { await connection.rollback(); return "pending_checkout"; }
+      await connection.execute("DELETE FROM preorder_checkout_drafts WHERE user_id = ?", [userId]);
       await connection.execute("DELETE ci FROM cart_items ci INNER JOIN carts c ON c.id = ci.cart_id WHERE c.user_id = ?", [userId]);
       await connection.execute("UPDATE users SET full_name = 'Deleted customer', email = ?, phone = NULL, password_hash = ?, is_active = 0 WHERE id = ?", [marker, randomBytes(48).toString("hex"), userId]);
       await connection.commit();

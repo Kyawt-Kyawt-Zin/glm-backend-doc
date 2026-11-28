@@ -1,8 +1,12 @@
 import { randomUUID } from "node:crypto";
 import * as Response from "../config/response.helper.js";
 import * as orderRepository from "../repositories/order.repository.js";
+import * as paymentRepository from "../repositories/payment.repository.js";
 import * as deliveryZoneRepository from "../repositories/delivery-zone.repository.js";
+import { mediaConfig } from "../config/media.config.js";
+import { createStagedUpload, inspectStagedUpload, validateStagedUploadVersion, promoteStagedUpload } from "./s3-media.service.js";
 import { pickupWindow, validatePickupSelection } from "./pickup-scheduling.js";
+import { enqueueOrderEmail, tryEmailJob } from "./email-queue.service.js";
 
 const PREORDER_DEPOSIT_PERCENTAGE = 20;
 const PREORDER_TERMS_VERSION = "v1";
@@ -240,6 +244,155 @@ const createOrderWithItems = async ({
   };
 };
 
+const isDraftId = (id) => typeof id === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
+const draftJson = (data) => typeof data === "string" ? JSON.parse(data) : data;
+const draftSummary = (draft) => {
+  const items = draftJson(draft.items_snapshot);
+  const details = draftJson(draft.checkout_data);
+  return {
+    id: draft.id,
+    deposit_amount: Number(draft.deposit_amount),
+    total_amount: roundMoney(items.reduce((sum, item) => sum + Number(item.price) * Number(item.quantity), 0) + Number(details.delivery.deliveryFee)),
+    delivery_method: details.delivery.deliveryMethod,
+    delivery_address: details.delivery.deliveryAddress,
+    recipient_name: details.recipientName,
+    status: draft.status,
+    items: items.map(({ product_name, color, size, quantity, price }) => ({ product_name, color, size, quantity, price })),
+  };
+};
+
+export const getPendingPreorderDraft = async (userId) => {
+  let connection;
+  try {
+    connection = await orderRepository.getCheckoutConnection();
+    const [rows] = await connection.execute("SELECT * FROM preorder_checkout_drafts WHERE user_id = ? AND status = 'pending' ORDER BY created_at DESC LIMIT 1", [userId]);
+    return Response.success(rows.length ? draftSummary(rows[0]) : null);
+  } catch (error) { console.error("getPendingPreorderDraft:", error.message); return Response.internalServerError("Unable to load your preorder checkout"); }
+  finally { connection?.release(); }
+};
+
+export const getPreorderDraftStatus = async (userId, draftId) => {
+  if (!isDraftId(draftId)) return Response.badRequest("A valid checkout is required");
+  let connection;
+  try {
+    connection = await orderRepository.getCheckoutConnection();
+    const [rows] = await connection.execute("SELECT * FROM preorder_checkout_drafts WHERE id = ? AND user_id = ?", [draftId, userId]);
+    if (!rows.length) return Response.notFound("Checkout not found");
+    if (rows[0].status !== "completed") return Response.success({ status: rows[0].status });
+    const [orders] = await connection.execute("SELECT orders.id, orders.order_number, orders.fulfillment_type, orders.total_amount, orders.deposit_amount, payments.id AS deposit_payment_id FROM orders JOIN payments ON payments.order_id = orders.id AND payments.payment_type = 'deposit' WHERE orders.id = ? AND orders.user_id = ?", [rows[0].order_id, userId]);
+    return orders.length ? Response.success({ status: "completed", orders }) : Response.conflict("Please contact the shop about this checkout");
+  } catch (error) { console.error("getPreorderDraftStatus:", error.message); return Response.internalServerError("Unable to check checkout status"); }
+  finally { connection?.release(); }
+};
+
+export const cancelPreorderDraft = async (userId, draftId, acknowledgedNoTransfer) => {
+  if (!isDraftId(draftId) || acknowledgedNoTransfer !== true) {
+    return Response.badRequest("Confirm that no deposit has been transferred");
+  }
+  let connection;
+  try {
+    connection = await orderRepository.getCheckoutConnection();
+    await connection.beginTransaction();
+    const [rows] = await connection.execute("SELECT id, status, staging_key FROM preorder_checkout_drafts WHERE id = ? AND user_id = ? FOR UPDATE", [draftId, userId]);
+    const draft = rows[0];
+    if (!draft) { await connection.rollback(); return Response.notFound("Checkout not found"); }
+    if (draft.status !== "pending") {
+      await connection.rollback();
+      return Response.conflict("This checkout cannot be cancelled online. Please contact the shop.");
+    }
+    await connection.execute("UPDATE preorder_checkout_drafts SET status = 'cancelled', active_cart_id = NULL, active_user_id = NULL WHERE id = ? AND user_id = ?", [draftId, userId]);
+    await connection.commit();
+    return Response.success(null, "Preorder checkout cancelled; your cart is unchanged");
+  } catch (error) {
+    if (connection) await connection.rollback().catch(() => {});
+    console.error("cancelPreorderDraft:", error.message);
+    return Response.internalServerError("Unable to cancel this checkout");
+  } finally { connection?.release(); }
+};
+
+export const preparePreorderCheckout = async (userId, data) => {
+  const recipientName = String(data?.recipientName || "").trim();
+  const recipientPhone = String(data?.recipientPhone || "").trim();
+  if (!recipientName || !recipientPhone || data?.preorderTermsAccepted !== true) return Response.badRequest("Recipient details and preorder terms are required");
+  let connection;
+  try {
+    connection = await orderRepository.getCheckoutConnection();
+    await connection.beginTransaction();
+    const [users] = await connection.execute("SELECT is_active FROM users WHERE id = ? FOR UPDATE", [userId]);
+    if (!users.length || !Number(users[0].is_active)) { await connection.rollback(); return Response.unauthorized(); }
+    const cart = await orderRepository.findActiveCartForCheckout(connection, userId);
+    if (!cart) { await connection.rollback(); return Response.badRequest("Your cart is empty"); }
+    const [existing] = await connection.execute("SELECT * FROM preorder_checkout_drafts WHERE active_user_id = ? AND user_id = ? FOR UPDATE", [userId, userId]);
+    if (existing.length) { await connection.rollback(); return Response.success(draftSummary(existing[0]), "Existing preorder checkout"); }
+    const items = (await orderRepository.getCartItemsForCheckout(connection, cart.id)).filter((item) => item.fulfillment_type === "preorder");
+    if (!items.length || items.some((item) => !Number(item.variant_is_active) || !Number(item.product_is_active) || !Number(item.category_is_active))) { await connection.rollback(); return Response.badRequest("Preorder items are missing or no longer available"); }
+    const delivery = await resolveDeliveryDetails(data.preorderDelivery, "preorder");
+    if (delivery.error) { await connection.rollback(); return Response.badRequest(delivery.error); }
+    const deposit = roundMoney(items.reduce((total, item) => total + Number(item.price) * Number(item.quantity), 0) * PREORDER_DEPOSIT_PERCENTAGE / 100);
+    const draft = { id: randomUUID(), user_id: userId, active_cart_id: cart.id, checkout_data: JSON.stringify({ recipientName, recipientPhone, delivery: delivery.data, cartId: cart.id }), items_snapshot: JSON.stringify(items), deposit_amount: deposit, status: "pending" };
+    await connection.execute("INSERT INTO preorder_checkout_drafts (id, user_id, active_user_id, active_cart_id, checkout_data, items_snapshot, deposit_amount) VALUES (?, ?, ?, ?, ?, ?, ?)", [draft.id, userId, userId, cart.id, draft.checkout_data, draft.items_snapshot, deposit]);
+    await connection.commit();
+    return Response.created(draftSummary(draft));
+  } catch (error) { if (connection) await connection.rollback().catch(() => {}); console.error("preparePreorderCheckout:", error.message); return Response.internalServerError("Unable to prepare preorder checkout"); }
+  finally { connection?.release(); }
+};
+
+export const preparePreorderReceiptUpload = async (userId, draftId, contentType) => {
+  if (!isDraftId(draftId) || !mediaConfig.allowedMimeTypes.includes(contentType)) return Response.badRequest("A valid checkout and image type are required");
+  let connection;
+  try {
+    connection = await orderRepository.getCheckoutConnection();
+    await connection.beginTransaction();
+    const [rows] = await connection.execute("SELECT * FROM preorder_checkout_drafts WHERE id = ? AND user_id = ? FOR UPDATE", [draftId, userId]);
+    if (!rows.length || rows[0].status !== "pending") { await connection.rollback(); return Response.conflict("This checkout is unavailable"); }
+    const upload = await createStagedUpload({ mediaKind: "paymentProof", contentType });
+    await connection.execute("UPDATE preorder_checkout_drafts SET staging_key = ?, content_type = ? WHERE id = ? AND user_id = ?", [upload.key, contentType, draftId, userId]);
+    await connection.commit();
+    return Response.success({ uploadUrl: upload.uploadUrl, fields: upload.fields, expiresIn: upload.expiresIn });
+  } catch (error) { if (connection) await connection.rollback().catch(() => {}); console.error("preparePreorderReceiptUpload:", error.message); return Response.internalServerError("Unable to prepare receipt upload"); }
+  finally { connection?.release(); }
+};
+
+export const completePreorderCheckout = async (userId, draftId, transactionReference) => {
+  const reference = typeof transactionReference === "string" ? transactionReference.trim() : "";
+  if (!isDraftId(draftId) || !reference || reference.length > 100) return Response.badRequest("A valid checkout and transaction reference are required");
+  let connection;
+  try {
+    connection = await orderRepository.getCheckoutConnection();
+    await connection.beginTransaction();
+    const [rows] = await connection.execute("SELECT * FROM preorder_checkout_drafts WHERE id = ? AND user_id = ? FOR UPDATE", [draftId, userId]);
+    const draft = rows[0];
+    if (!draft) { await connection.rollback(); return Response.notFound("Checkout not found"); }
+    if (draft.status === "completed") {
+      const [orders] = await connection.execute("SELECT orders.id, orders.order_number, orders.fulfillment_type, orders.total_amount, orders.deposit_amount, payments.id AS deposit_payment_id FROM orders JOIN payments ON payments.order_id = orders.id AND payments.payment_type = 'deposit' WHERE orders.id = ? AND orders.user_id = ?", [draft.order_id, userId]);
+      await connection.rollback();
+      return orders.length ? Response.success({ orders }, "Order already placed") : Response.conflict("Please contact the shop about this checkout");
+    }
+    if (draft.status !== "pending" || !draft.staging_key || !draft.content_type) { await connection.rollback(); return Response.badRequest("Upload your receipt first"); }
+    const [users] = await connection.execute("SELECT is_active FROM users WHERE id = ? FOR UPDATE", [userId]);
+    if (!users.length || !Number(users[0].is_active)) { await connection.rollback(); return Response.unauthorized(); }
+    const inspected = await inspectStagedUpload({ mediaKind: "paymentProof", key: draft.staging_key, contentType: draft.content_type });
+    await validateStagedUploadVersion({ mediaKind: "paymentProof", stagingKey: draft.staging_key, contentType: draft.content_type, versionId: inspected.versionId });
+    const finalKey = await promoteStagedUpload({ mediaKind: "paymentProof", stagingKey: draft.staging_key, contentType: draft.content_type, versionId: inspected.versionId, uploadId: draft.id });
+    const details = draftJson(draft.checkout_data);
+    const items = draftJson(draft.items_snapshot);
+    const order = await createOrderWithItems({ connection, userId, recipientName: details.recipientName, recipientPhone: details.recipientPhone, fulfillmentType: "preorder", items, delivery: details.delivery });
+    if (roundMoney(order.deposit_amount) !== roundMoney(draft.deposit_amount)) throw new Error("Draft deposit amount mismatch");
+    await paymentRepository.submitDepositProof({ connection, paymentId: order.deposit_payment_id, transactionReference: reference, paymentProofPath: null, paymentProofDriver: "s3", paymentProofStorageKey: finalKey });
+    for (const item of items) {
+      // Remove only purchased units if the quantity changed in another tab.
+      await connection.execute("DELETE FROM cart_items WHERE cart_id = ? AND id = ? AND quantity <= ?", [details.cartId, item.cart_item_id, item.quantity]);
+      await connection.execute("UPDATE cart_items SET quantity = quantity - ? WHERE cart_id = ? AND id = ? AND quantity > ?", [item.quantity, details.cartId, item.cart_item_id, item.quantity]);
+    }
+    // Keep the cart active even when it is empty: another tab may add an item
+    // while this receipt is being processed.
+    await connection.execute("UPDATE preorder_checkout_drafts SET status = 'completed', active_cart_id = NULL, active_user_id = NULL, order_id = ? WHERE id = ? AND user_id = ?", [order.id, draftId, userId]);
+    await connection.commit();
+    return Response.created({ orders: [order] }, "Order placed and receipt submitted");
+  } catch (error) { if (connection) await connection.rollback().catch(() => {}); console.error("completePreorderCheckout:", error.message); return Response.internalServerError("Unable to submit the receipt. Retry or contact the shop if you have already paid."); }
+  finally { connection?.release(); }
+};
+
 export const checkoutMyCart = async (userId, checkoutData) => {
   const recipientName = String(checkoutData?.recipientName || "").trim();
   const recipientPhone = String(checkoutData?.recipientPhone || "").trim();
@@ -271,10 +424,16 @@ export const checkoutMyCart = async (userId, checkoutData) => {
       return Response.badRequest("Your cart is empty");
     }
 
-    const cartItems = await orderRepository.getCartItemsForCheckout(
+    const allCartItems = await orderRepository.getCartItemsForCheckout(
       connection,
       cart.id,
     );
+
+    // An explicit in-stock checkout leaves preorder items in the active cart.
+    // The existing checkout remains unchanged until receipt-first checkout is ready.
+    const cartItems = checkoutData?.fulfillmentType === "in_stock"
+      ? allCartItems.filter((item) => item.fulfillment_type === "in_stock")
+      : allCartItems;
 
     if (cartItems.length === 0) {
       await connection.rollback();
@@ -305,6 +464,11 @@ export const checkoutMyCart = async (userId, checkoutData) => {
     const preorderItems = cartItems.filter(
       (item) => item.fulfillment_type === "preorder",
     );
+
+    if (preorderItems.length > 0) {
+      await connection.rollback();
+      return Response.badRequest("Preorder checkout requires a deposit receipt. Refresh the page and try again.");
+    }
 
     if (
       preorderItems.length > 0 &&
@@ -392,8 +556,13 @@ export const checkoutMyCart = async (userId, checkoutData) => {
       createdOrders.push(order);
     }
 
-    await orderRepository.deleteCartItemsByCartId(connection, cart.id);
-    await orderRepository.markCartCheckedOut(connection, cart.id);
+    if (checkoutData?.fulfillmentType === "in_stock") {
+      await orderRepository.deleteCartItemsByIds(connection, cart.id, cartItems.map((item) => item.cart_item_id));
+      // Keep this cart active so items added in another tab are not stranded.
+    } else {
+      await orderRepository.deleteCartItemsByCartId(connection, cart.id);
+      await orderRepository.markCartCheckedOut(connection, cart.id);
+    }
 
     await connection.commit();
 
@@ -535,7 +704,13 @@ export const scheduleCustomerPickup = async (userId, orderId, { date, time } = {
     }
     const slot = `${date} · ${time} (Dubai time)`;
     await orderRepository.updatePickupSlot(connection, order.id, slot);
+    const emailJobId = order.pickup_time_slot !== slot
+      ? await enqueueOrderEmail(connection, order.id, "pickup", { pickupTimeSlot: slot, updated: Boolean(order.pickup_time_slot) })
+      : null;
     await connection.commit();
+    connection.release();
+    connection = null;
+    tryEmailJob(emailJobId);
     return Response.success({ pickup_time_slot: slot }, "Pickup time saved successfully");
   } catch (error) {
     if (connection) await connection.rollback();
@@ -581,10 +756,11 @@ export const getOrderForManagement = async (orderId) => {
       return Response.notFound("Order not found");
     }
 
-    const [items, payments, statusHistory] = await Promise.all([
+    const [items, payments, statusHistory, receipts] = await Promise.all([
       orderRepository.findItemsByOrderId(numericOrderId),
       orderRepository.findPaymentsByOrderId(numericOrderId),
       orderRepository.findStatusHistoryByOrderId(numericOrderId),
+      orderRepository.findPreorderReceiptsByOrderId(numericOrderId),
     ]);
 
     return Response.success(
@@ -593,6 +769,7 @@ export const getOrderForManagement = async (orderId) => {
         items: items.map((item) => {
           return {
             ...item,
+            preorder_received_quantity: Number(receipts.find((entry) => entry.id === item.id)?.preorder_received_quantity || 0),
             unit_price: Number(item.unit_price),
             line_total: Number(item.line_total),
             deposit_percentage: Number(item.deposit_percentage),
@@ -612,6 +789,43 @@ export const getOrderForManagement = async (orderId) => {
     console.error("getOrderForManagement service error:", error.message);
 
     return Response.internalServerError("Unable to fetch order");
+  }
+};
+
+export const updatePreorderReceivedQuantity = async (orderId, itemId, quantity) => {
+  const numericOrderId = Number(orderId);
+  const numericItemId = Number(itemId);
+  const received = Number(quantity);
+  if (!isPositiveInteger(numericOrderId) || !isPositiveInteger(numericItemId) ||
+      typeof quantity !== "number" || !Number.isInteger(received) || received < 0) {
+    return Response.badRequest("A valid order, item, and non-negative whole number are required");
+  }
+  let connection;
+  try {
+    connection = await orderRepository.getConnection();
+    await connection.beginTransaction();
+    const [orders] = await connection.execute("SELECT id, fulfillment_type, status FROM orders WHERE id = ? FOR UPDATE", [numericOrderId]);
+    if (!orders.length) { await connection.rollback(); return Response.notFound("Order not found"); }
+    const order = orders[0];
+    if (order.fulfillment_type !== "preorder" || !["confirmed", "processing", "ready_for_delivery", "ready_for_pickup"].includes(order.status)) {
+      await connection.rollback();
+      return Response.badRequest("Received quantities can only be updated for active confirmed preorders");
+    }
+    const [items] = await connection.execute("SELECT id, quantity FROM order_items WHERE id = ? AND order_id = ? FOR UPDATE", [numericItemId, numericOrderId]);
+    if (!items.length) { await connection.rollback(); return Response.notFound("Order item not found"); }
+    if (received > Number(items[0].quantity)) {
+      await connection.rollback();
+      return Response.badRequest("Received quantity cannot exceed the quantity ordered");
+    }
+    await connection.execute("UPDATE order_items SET preorder_received_quantity = ? WHERE id = ? AND order_id = ?", [received, numericItemId, numericOrderId]);
+    await connection.commit();
+    return Response.success({ order_item_id: numericItemId, preorder_received_quantity: received }, "Received quantity updated");
+  } catch (error) {
+    if (connection) await connection.rollback();
+    console.error("updatePreorderReceivedQuantity service error:", error.message);
+    return Response.internalServerError("Unable to update received quantity");
+  } finally {
+    if (connection) connection.release();
   }
 };
 
@@ -668,6 +882,7 @@ export const updateOrderStatusForManagement = async (
     const order = await orderRepository.findByIdForManagement(
       numericOrderId,
       connection,
+      { forUpdate: true },
     );
 
     const cancelTransaction = async (response) => {
@@ -687,6 +902,16 @@ export const updateOrderStatusForManagement = async (
           `Order cannot move from ${order.status} to ${nextStatus}`,
         ),
       );
+    }
+
+    if (order.fulfillment_type === "preorder" && nextStatus === "cancelled") {
+      const [reserved] = await connection.execute(
+        "SELECT id FROM order_items WHERE order_id = ? AND preorder_received_quantity > 0 LIMIT 1",
+        [numericOrderId],
+      );
+      if (reserved.length) {
+        return cancelTransaction(Response.badRequest("This preorder has received items reserved for it. Adjust their received quantities before cancelling."));
+      }
     }
 
     if (
@@ -752,7 +977,12 @@ export const updateOrderStatusForManagement = async (
       changedBy,
     });
 
+    const emailJobId = await enqueueOrderEmail(connection, numericOrderId, "status", { status: nextStatus });
     await connection.commit();
+
+    connection.release();
+    connection = null;
+    tryEmailJob(emailJobId);
 
     return Response.success(
       {
@@ -813,6 +1043,7 @@ export const correctOrderStatusForManagement = async (
     const order = await orderRepository.findByIdForManagement(
       numericOrderId,
       connection,
+      { forUpdate: true },
     );
 
     const cancelTransaction = async (response) => {
@@ -851,6 +1082,16 @@ export const correctOrderStatusForManagement = async (
       );
     }
 
+    if (order.fulfillment_type === "preorder" && correctedStatus === "pending") {
+      const [reserved] = await connection.execute(
+        "SELECT id FROM order_items WHERE order_id = ? AND preorder_received_quantity > 0 LIMIT 1",
+        [numericOrderId],
+      );
+      if (reserved.length) {
+        return cancelTransaction(Response.badRequest("This preorder has received items reserved for it. Adjust their received quantities before moving it back to pending."));
+      }
+    }
+
     await orderRepository.correctOrderStatus(
       numericOrderId,
       correctedStatus,
@@ -866,7 +1107,12 @@ export const correctOrderStatusForManagement = async (
       changedBy,
     });
 
+    const emailJobId = await enqueueOrderEmail(connection, numericOrderId, "status", { status: correctedStatus, isCorrection: true });
     await connection.commit();
+
+    connection.release();
+    connection = null;
+    tryEmailJob(emailJobId);
 
     return Response.success(
       {

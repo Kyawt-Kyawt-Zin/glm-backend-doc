@@ -7,6 +7,36 @@ const router = Router();
 
 router.use(authenticate);
 
+router.get("/checkout/preorder/draft", async (req, res) => {
+  const response = await orderService.getPendingPreorderDraft(req.user.userId);
+  return res.set("Cache-Control", "private, no-store").status(response.code).json(response);
+});
+
+router.post("/checkout/preorder/draft", async (req, res) => {
+  const response = await orderService.preparePreorderCheckout(req.user.userId, req.body);
+  return res.set("Cache-Control", "private, no-store").status(response.code).json(response);
+});
+
+router.get("/checkout/preorder/:draftId", async (req, res) => {
+  const response = await orderService.getPreorderDraftStatus(req.user.userId, req.params.draftId);
+  return res.set("Cache-Control", "private, no-store").status(response.code).json(response);
+});
+
+router.post("/checkout/preorder/:draftId/cancel", async (req, res) => {
+  const response = await orderService.cancelPreorderDraft(req.user.userId, req.params.draftId, req.body?.acknowledgedNoTransfer);
+  return res.set("Cache-Control", "private, no-store").status(response.code).json(response);
+});
+
+router.post("/checkout/preorder/:draftId/upload", async (req, res) => {
+  const response = await orderService.preparePreorderReceiptUpload(req.user.userId, req.params.draftId, req.body?.contentType);
+  return res.set("Cache-Control", "private, no-store").status(response.code).json(response);
+});
+
+router.post("/checkout/preorder/:draftId/complete", async (req, res) => {
+  const response = await orderService.completePreorderCheckout(req.user.userId, req.params.draftId, req.body?.transactionReference);
+  return res.set("Cache-Control", "private, no-store").status(response.code).json(response);
+});
+
 router.post("/checkout", async (req, res) => {
   const response = await orderService.checkoutMyCart(req.user.userId, req.body);
 
@@ -42,6 +72,11 @@ router.get("/", authorizeRoles("admin", "staff"), async (req, res) => {
 router.get("/:orderId", authorizeRoles("admin", "staff"), async (req, res) => {
   const response = await orderService.getOrderForManagement(req.params.orderId);
 
+  return res.status(response.code).json(response);
+});
+
+router.patch("/:orderId/items/:itemId/preorder-received", authorizeRoles("admin", "staff"), async (req, res) => {
+  const response = await orderService.updatePreorderReceivedQuantity(req.params.orderId, req.params.itemId, req.body?.quantity);
   return res.status(response.code).json(response);
 });
 

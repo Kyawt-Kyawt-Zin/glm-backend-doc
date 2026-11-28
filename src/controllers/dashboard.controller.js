@@ -6,6 +6,16 @@ import { validateAnalyticsWeekQuery } from "../validators/dashboard.validator.js
 
 const router = Router();
 
+router.get("/confirmed-preorders", authenticate, authorizeRoles("admin", "staff"), async (req, res) => {
+  const response = await dashboardService.getConfirmedPreorderItems();
+  return res.status(response.code).json(response);
+});
+
+router.get("/received-preorders", authenticate, authorizeRoles("admin", "staff"), async (req, res) => {
+  const response = await dashboardService.getReceivedPreorderItems();
+  return res.status(response.code).json(response);
+});
+
 router.get(
   "/overview",
   authenticate,

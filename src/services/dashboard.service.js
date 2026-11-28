@@ -146,6 +146,26 @@ export const getRecentOrders = async (limit) => {
   }
 };
 
+export const getConfirmedPreorderItems = async () => {
+  try {
+    const items = await dashboardRepository.getConfirmedPreorderItems();
+    return Response.success(items, "Confirmed preorder items fetched successfully");
+  } catch (error) {
+    console.error("getConfirmedPreorderItems service error:", error.message);
+    return Response.internalServerError("Unable to fetch confirmed preorder items");
+  }
+};
+
+export const getReceivedPreorderItems = async () => {
+  try {
+    const items = await dashboardRepository.getReceivedPreorderItems();
+    return Response.success(items, "Received preorder items fetched successfully");
+  } catch (error) {
+    console.error("getReceivedPreorderItems service error:", error.message);
+    return Response.internalServerError("Unable to fetch received preorder items");
+  }
+};
+
 export const getLowStockVariants = async (threshold) => {
   const normalizedThreshold = threshold === undefined ? 3 : Number(threshold);
 

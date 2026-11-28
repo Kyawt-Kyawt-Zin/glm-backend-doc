@@ -204,6 +204,15 @@ export const deleteCartItemsByCartId = async (connection, cartId) => {
   );
 };
 
+export const deleteCartItemsByIds = async (connection, cartId, itemIds) => {
+  if (!itemIds.length) return;
+  const placeholders = itemIds.map(() => "?").join(", ");
+  await connection.execute(
+    `DELETE FROM cart_items WHERE cart_id = ? AND id IN (${placeholders})`,
+    [cartId, ...itemIds],
+  );
+};
+
 export const markCartCheckedOut = async (connection, cartId) => {
   await connection.execute(
     `UPDATE carts
@@ -355,6 +364,14 @@ export const findItemsByOrderId = async (orderId) => {
   return items;
 };
 
+export const findPreorderReceiptsByOrderId = async (orderId) => {
+  const [rows] = await pool.execute(
+    "SELECT id, preorder_received_quantity FROM order_items WHERE order_id = ?",
+    [orderId],
+  );
+  return rows;
+};
+
 export const findPaymentsByOrderId = async (orderId) => {
   const [payments] = await pool.execute(
     `SELECT
@@ -432,7 +449,7 @@ export const findAllForManagement = async () => {
   return orders;
 };
 
-export const findByIdForManagement = async (orderId, executor = pool) => {
+export const findByIdForManagement = async (orderId, executor = pool, { forUpdate = false } = {}) => {
   const [orders] = await executor.execute(
     `SELECT
       orders.id,
@@ -464,11 +481,25 @@ export const findByIdForManagement = async (orderId, executor = pool) => {
     INNER JOIN users
       ON users.id = orders.user_id
     WHERE orders.id = ?
-    LIMIT 1`,
+    LIMIT 1 ${forUpdate ? "FOR UPDATE" : ""}`,
     [orderId],
   );
 
   return orders[0] || null;
+};
+
+export const findOrderNotificationContext = async (orderId) => {
+  const [rows] = await pool.execute(
+    `SELECT orders.id, orders.order_number, orders.status, orders.fulfillment_type,
+            orders.delivery_method, orders.pickup_time_slot,
+            users.full_name AS customer_name, users.email AS customer_email
+     FROM orders
+     INNER JOIN users ON users.id = orders.user_id
+     WHERE orders.id = ? AND users.role = 'customer' AND users.is_active = TRUE
+     LIMIT 1`,
+    [orderId],
+  );
+  return rows[0] || null;
 };
 
 export const updateOrderStatus = async (
@@ -510,7 +541,7 @@ export const updateOrderStatus = async (
 
 export const lockCustomerPickupOrder = async (connection, orderId, userId) => {
   const [rows] = await connection.execute(
-    `SELECT id, fulfillment_type, delivery_method, status,
+    `SELECT id, fulfillment_type, delivery_method, status, pickup_time_slot,
       UNIX_TIMESTAMP(confirmed_at) * 1000 AS pickup_confirmed_ms,
       (SELECT UNIX_TIMESTAMP(h.created_at) * 1000 FROM order_status_history h
        WHERE h.order_id = orders.id AND h.new_status = 'ready_for_pickup'

@@ -1,5 +1,6 @@
 import * as Response from "../config/response.helper.js";
 import * as changeRequestRepository from "../repositories/order-change-request.repository.js";
+import { enqueueOrderEmail, tryEmailJob } from "./email-queue.service.js";
 
 const allowedRequestTypes = ["change_variant", "cancel_order"];
 const changeableOrderStatuses = ["pending", "confirmed"];
@@ -311,6 +312,17 @@ export const reviewOrderChangeRequest = async (
       );
     }
 
+    if (status === "approved" && request.fulfillment_type === "preorder" &&
+        ["cancel_order", "change_variant"].includes(request.request_type)) {
+      const [reserved] = request.request_type === "cancel_order"
+        ? await connection.execute("SELECT id FROM order_items WHERE order_id = ? AND preorder_received_quantity > 0 LIMIT 1", [request.order_id])
+        : await connection.execute("SELECT id FROM order_items WHERE id = ? AND order_id = ? AND preorder_received_quantity > 0 LIMIT 1", [request.order_item_id, request.order_id]);
+      if (reserved.length) {
+        await connection.rollback();
+        return Response.badRequest("This preorder has received items reserved for it. Adjust their received quantities before approving this request.");
+      }
+    }
+
     if (status === "approved" && request.request_type === "cancel_order") {
       const orderItems = await changeRequestRepository.findOrderItemsForReview(
         connection,
@@ -442,7 +454,14 @@ export const reviewOrderChangeRequest = async (
       reviewedBy: staffUserId,
     });
 
+    const emailJobId = status === "approved" && request.request_type === "cancel_order"
+      ? await enqueueOrderEmail(connection, request.order_id, "status", { status: "cancelled" })
+      : null;
     await connection.commit();
+
+    connection.release();
+    connection = null;
+    tryEmailJob(emailJobId);
 
     const message =
       status === "rejected"
